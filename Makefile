@@ -68,7 +68,7 @@ TP_LDFLAGS  := \
     $(TPBUILD)/libconfig/out/libconfig.a \
     -lpthread -ldl -lm
 
-CFLAGS      := -std=c23 -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Wshadow -Wconversion \
+CFLAGS      := -std=c2x -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Wshadow -Wconversion \
                -Wstrict-prototypes -Wmissing-prototypes -MMD -MP \
                -I$(INCDIR) $(TP_CFLAGS)
 

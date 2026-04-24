@@ -10,7 +10,7 @@
 [submodule "third_party/sqlite"]
 	path = third_party/sqlite
 	url = https://github.com/sqlite/sqlite.git
-	ignore = dirty
+	ignore = all
 [submodule "third_party/stumpless"]
 	path = third_party/stumpless
 	url = https://github.com/goatshriek/stumpless.git

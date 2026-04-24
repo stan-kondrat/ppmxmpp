@@ -13,6 +13,7 @@
 
 static void write_conf(const char *content) {
     FILE *f = fopen(TMPCONF, "w");
+    assert_non_null(f);
     fputs(content, f);
     fclose(f);
 }
