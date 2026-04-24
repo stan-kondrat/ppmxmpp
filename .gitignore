@@ -1,0 +1,49 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.cmake
+
+# CMake (generated files outside build/ — e.g. in-source configure runs)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.pc
+
+# Compiler/linker
+*.gcda
+*.gcno
+*.gcov
+*.gcov.dat
+*.gcov.info
+lcov.info
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.bak
+
+# Local config with secrets
+*.local
+.env
+secrets.json
+credentials.json
+config.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

@@ -1,0 +1,22 @@
+[submodule "third_party/mbedtls"]
+	path = third_party/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "third_party/libuv"]
+	path = third_party/libuv
+	url = https://github.com/libuv/libuv.git
+[submodule "third_party/libstrophe"]
+	path = third_party/libstrophe
+	url = https://github.com/strophe/libstrophe.git
+[submodule "third_party/sqlite"]
+	path = third_party/sqlite
+	url = https://github.com/sqlite/sqlite.git
+	ignore = dirty
+[submodule "third_party/stumpless"]
+	path = third_party/stumpless
+	url = https://github.com/goatshriek/stumpless.git
+[submodule "third_party/cmocka"]
+	path = third_party/cmocka
+	url = https://gitlab.com/cmocka/cmocka.git
+[submodule "third_party/libconfig"]
+	path = third_party/libconfig
+	url = https://github.com/hyperrealm/libconfig.git
