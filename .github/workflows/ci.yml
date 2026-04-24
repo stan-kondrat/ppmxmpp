@@ -20,6 +20,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake autoconf automake libtool pkg-config clang
 
+      - name: Get third-party commit hashes
+        id: submodules
+        run: echo "hash=$(git submodule status | sha256sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Cache third-party builds
+        uses: actions/cache@v4
+        with:
+          path: build/debug/third_party
+          key: ${{ runner.os }}-thirdparty-${{ steps.submodules.outputs.hash }}
+          restore-keys: |
+            ${{ runner.os }}-thirdparty-
+
       - name: Build third-party libraries
         run: make third-party
 
