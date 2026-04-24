@@ -305,7 +305,7 @@ TEST_LDFLAGS := \
     $(THIRDPARTY)/sqlite/libsqlite3.a \
     -lpthread -ldl -lm
 
-all: $(THIRDPARTY_STAMPS) $(TARGET)
+all: $(THIRDPARTY_STAMPS) $(TARGET) $(COMPILE_COMMANDS)
 
 $(TARGET): $(OBJS) | $(BUILDDIR)
 	$(CC) $(LDFLAGS) -o $@ $^ $(TP_LDFLAGS)
@@ -318,6 +318,33 @@ $(BUILDDIR)/%: $(TESTDIR)/%.c $(LIB_OBJS) | $(BUILDDIR)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
+
+# ---------------------------------------------------------------------------
+# compile_commands.json generator
+# ---------------------------------------------------------------------------
+COMPILE_COMMANDS := $(BUILDDIR)/compile_commands.json
+
+$(COMPILE_COMMANDS): $(OBJS) | $(BUILDDIR)
+	@{ \
+	  printf '[\n'; \
+	  first=1; \
+	  for src in $(SRCS); do \
+	    obj=$(BUILDDIR)/$$(basename $$src .c).o; \
+	    if [ -f "$$obj" ]; then \
+	      if [ "$$first" -eq 1 ]; then first=0; else printf ',\n'; fi; \
+	      printf '  {\n'; \
+	      printf '    "directory": "%s",\n' "$$(pwd)"; \
+	      printf '    "file": "%s",\n' "$$src"; \
+	      printf '    "output": "%s",\n' "$$obj"; \
+	      printf '    "command": "$(CC) $(CFLAGS) -c -o %s %s"\n' "$$obj" "$$src"; \
+	      printf '  }'; \
+	    fi; \
+	  done; \
+	  printf '\n]\n'; \
+	} > $@
+
+.PHONY: compile_commands
+compile_commands: $(COMPILE_COMMANDS)
 
 # ---------------------------------------------------------------------------
 # Utility targets
@@ -352,6 +379,7 @@ help:
 	@echo "  distclean    clean + remove sqlite in-source build"
 	@echo "  test         Build and run tests"
 	@echo "  format       Format source files with clang-format"
+	@echo "  compile_commands  Generate compile_commands.json"
 	@echo "  help         Show this help message"
 	@echo ""
 	@echo "Build types (BUILD=debug|release|asan, default: debug):"
