@@ -269,15 +269,15 @@ const char *storage_db_column_text(storage_stmt_t *stmt) {
     return col ? (const char *)col : NULL;
 }
 
-char *storage_db_column_text_copy(storage_stmt_t *stmt) {
+char *storage_db_column_text_copy(storage_stmt_t *stmt, int col) {
     if (!stmt || !stmt->stmt) {
         return NULL;
     }
-    const unsigned char *col = sqlite3_column_text(stmt->stmt, 0);
-    if (!col) {
+    const unsigned char *data = sqlite3_column_text(stmt->stmt, col);
+    if (!data) {
         return NULL;
     }
-    return strdup((const char *)col);
+    return strdup((const char *)data);
 }
 
 int storage_db_changes(sqlite3 *db) {

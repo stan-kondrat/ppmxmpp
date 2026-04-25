@@ -14,6 +14,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "server.h"
 #include "storage/db.h"
 #include "storage/users.h"
 
@@ -125,8 +126,22 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    storage_db_close();
+    uv_loop_t loop;
+    uv_loop_init(&loop);
 
+    int srv = server_start(&loop);
+    if (srv != 0) {
+        stump_er("server initialization failed");
+        uv_loop_close(&loop);
+        storage_db_close();
+        log_free();
+        return 1;
+    }
+
+    uv_run(&loop, UV_RUN_DEFAULT);
+    uv_loop_close(&loop);
+
+    storage_db_close();
     log_free();
-    return 0;
+    return srv != 0 ? 1 : 0;
 }

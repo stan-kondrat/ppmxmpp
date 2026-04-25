@@ -16,6 +16,10 @@ int storage_users_get_by_jid(const char *bare_jid, storage_user_t *user_out) {
     storage_stmt_t *stmt = NULL;
     int rc;
 
+    if (!bare_jid || !user_out) {
+        return -1;
+    }
+
     if (storage_db_open(&db) != 0) {
         return -1;
     }
@@ -31,8 +35,8 @@ int storage_users_get_by_jid(const char *bare_jid, storage_user_t *user_out) {
     rc = storage_db_step(stmt);
 
     if (rc == SQLITE_ROW) {
-        char *jid_copy = storage_db_column_text_copy(stmt);
-        char *pass_copy = storage_db_column_text_copy(stmt);
+        char *jid_copy = storage_db_column_text_copy(stmt, 0);
+        char *pass_copy = storage_db_column_text_copy(stmt, 1);
 
         if (jid_copy && pass_copy) {
             strncpy(static_jid, jid_copy, sizeof(static_jid) - 1);
@@ -57,6 +61,10 @@ int storage_users_get_by_jid(const char *bare_jid, storage_user_t *user_out) {
 }
 
 int storage_users_check_password(const char *bare_jid, const char *password) {
+    if (!password) {
+        return 0;
+    }
+
     storage_user_t user;
     int rc = storage_users_get_by_jid(bare_jid, &user);
 
@@ -76,6 +84,10 @@ int storage_users_create(const char *bare_jid, const char *password_plain) {
     storage_stmt_t *stmt = NULL;
     int rc;
     long long now;
+
+    if (!bare_jid || !password_plain) {
+        return -1;
+    }
 
     if (storage_db_open(&db) != 0) {
         return -1;

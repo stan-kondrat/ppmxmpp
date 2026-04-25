@@ -37,8 +37,27 @@ int config_set_log_level(const char *level, server_config_t *out) {
     return -1;
 }
 
+int config_set_listen_host(const char *host, server_config_t *out) {
+    if (!host || host[0] == '\0') {
+        stump_er("listen_host must not be empty");
+        return -1;
+    }
+    snprintf(out->listen_host, sizeof(out->listen_host), "%s", host);
+    return 0;
+}
+
+int config_set_listen_port(int port, server_config_t *out) {
+    if (port < 1 || port > 65535) {
+        stump_er("listen_port %d out of range [1, 65535]", port);
+        return -1;
+    }
+    out->listen_port = port;
+    return 0;
+}
+
 static int config_parse_cfg(config_t *cfg, server_config_t *out) {
     const char *val;
+    int         ival;
 
     if (config_lookup_string(cfg, "db_path", &val) &&
             config_set_db_path(val, out) != 0)
@@ -46,6 +65,14 @@ static int config_parse_cfg(config_t *cfg, server_config_t *out) {
 
     if (config_lookup_string(cfg, "log_level", &val) &&
             config_set_log_level(val, out) != 0)
+        return -1;
+
+    if (config_lookup_string(cfg, "listen_host", &val) &&
+            config_set_listen_host(val, out) != 0)
+        return -1;
+
+    if (config_lookup_int(cfg, "listen_port", &ival) &&
+            config_set_listen_port(ival, out) != 0)
         return -1;
 
     return 0;
@@ -66,7 +93,9 @@ server_config_t config_parse_default_config(void) {
 
     if (config_parse_cfg(&cfg, &default_server_config) != 0 ||
             default_server_config.db_path[0] == '\0' ||
-            default_server_config.log_level[0] == '\0') {
+            default_server_config.log_level[0] == '\0' ||
+            default_server_config.listen_host[0] == '\0' ||
+            default_server_config.listen_port == 0) {
         fprintf(stderr, "fatal: embedded default config missing or invalid required fields\n");
         config_destroy(&cfg);
         exit(1);
@@ -137,5 +166,7 @@ void config_print(const char *path, const server_config_t *cfg) {
     if (realpath(path, full_path) == NULL)
         snprintf(full_path, sizeof(full_path), "%s", path);
 
-    stump_i("config file: \"%s\", db_path: \"%s\", log_level: \"%s\"", full_path, cfg->db_path, cfg->log_level);
+    stump_i("config: file=\"%s\" db_path=\"%s\" log_level=\"%s\" listen=\"%s:%d\"",
+            full_path, cfg->db_path, cfg->log_level,
+            cfg->listen_host, cfg->listen_port);
 }

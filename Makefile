@@ -303,6 +303,7 @@ TEST_LDFLAGS := \
     $(TPBUILD)/libconfig/out/libconfig.a \
     $(TPBUILD)/stumpless/libstumpless.a \
     $(THIRDPARTY)/sqlite/libsqlite3.a \
+    $(TPBUILD)/libuv/libuv.a \
     -lpthread -ldl -lm
 
 all: $(THIRDPARTY_STAMPS) $(TARGET) $(COMPILE_COMMANDS)

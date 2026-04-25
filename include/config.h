@@ -9,6 +9,8 @@ extern const char DEFAULT_CONFIG_CONTENT[];
 typedef struct {
     char db_path[512];
     char log_level[16];
+    char listen_host[64];
+    int  listen_port;
 } server_config_t;
 
 /* The global server config, filled by config_load(). */
@@ -35,5 +37,11 @@ int config_set_db_path(const char *path, server_config_t *out);
 
 /* Validate and set log_level in out. Returns 0 on success, -1 on error. */
 int config_set_log_level(const char *level, server_config_t *out);
+
+/* Validate and set listen_host in out. Returns 0 on success, -1 on error. */
+int config_set_listen_host(const char *host, server_config_t *out);
+
+/* Validate and set listen_port in out. Returns 0 on success, -1 on error. */
+int config_set_listen_port(int port, server_config_t *out);
 
 #endif /* CONFIG_H */

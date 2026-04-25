@@ -44,9 +44,9 @@ long long storage_db_column_int64(storage_stmt_t *stmt);
  * Caller must not free the returned pointer. */
 const char *storage_db_column_text(storage_stmt_t *stmt);
 
-/* Return a copy of the text value of column 0.
+/* Return a copy of the text value of the given column.
  * Caller must free the returned pointer. */
-char *storage_db_column_text_copy(storage_stmt_t *stmt);
+char *storage_db_column_text_copy(storage_stmt_t *stmt, int col);
 
 /* Return the number of rows changed by the last statement. */
 int storage_db_changes(sqlite3 *db);
