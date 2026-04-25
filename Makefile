@@ -301,7 +301,7 @@ third-party: $(THIRDPARTY_STAMPS)
 # ---------------------------------------------------------------------------
 # Main target
 # ---------------------------------------------------------------------------
-.PHONY: all clean distclean test test-e2e format help
+.PHONY: all clean distclean test test-e2e format help compile_commands third-party
 
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
@@ -324,7 +324,7 @@ TEST_LDFLAGS := \
     -lexpat -lz -lresolv \
     -lpthread -ldl -lm
 
-all: $(THIRDPARTY_STAMPS) $(TARGET) $(COMPILE_COMMANDS)
+all: $(THIRDPARTY_STAMPS) $(TARGET) compile_commands
 
 $(TARGET): $(OBJS) | $(BUILDDIR)
 	$(CC) $(LDFLAGS) -o $@ $^ $(TP_LDFLAGS)
@@ -342,7 +342,7 @@ $(BUILDDIR)/%: $(TESTDIR)/%.c $(LIB_OBJS) | $(BUILDDIR)
 XMPP_AUTH_TEST_LDFLAGS := \
     $(TPBUILD)/libstrophe/lib/libstrophe.a \
     $(TEST_LDFLAGS) \
-    -lexpat -lssl -lcrypto -lz -lresolv
+    -lexpat -lz -lresolv
 
 $(BUILDDIR)/test_xmpp_sasl: $(TESTDIR)/test_xmpp_sasl.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
@@ -356,30 +356,33 @@ $(BUILDDIR)/storage:
 
 # ---------------------------------------------------------------------------
 # compile_commands.json generator
+# Writes build/<BUILD>/compile_commands.json and symlinks it at the root so
+# clangd finds it automatically.  Rebuilds only when sources or flags change.
 # ---------------------------------------------------------------------------
-COMPILE_COMMANDS := $(BUILDDIR)/compile_commands.json
+COMPILE_COMMANDS := compile_commands.json
+COMPILE_COMMANDS_BUILD := $(BUILDDIR)/compile_commands.json
 
-$(COMPILE_COMMANDS): $(OBJS) | $(BUILDDIR)
+.PHONY: compile_commands
+compile_commands: $(COMPILE_COMMANDS_BUILD)
+	@ln -sf $(COMPILE_COMMANDS_BUILD) $(COMPILE_COMMANDS)
+
+$(COMPILE_COMMANDS_BUILD): $(SRCS) Makefile | $(BUILDDIR)
 	@{ \
 	  printf '[\n'; \
 	  first=1; \
 	  for src in $(SRCS); do \
-	    obj=$(BUILDDIR)/$$(basename $$src .c).o; \
-	    if [ -f "$$obj" ]; then \
-	      if [ "$$first" -eq 1 ]; then first=0; else printf ',\n'; fi; \
-	      printf '  {\n'; \
-	      printf '    "directory": "%s",\n' "$$(pwd)"; \
-	      printf '    "file": "%s",\n' "$$src"; \
-	      printf '    "output": "%s",\n' "$$obj"; \
-	      printf '    "command": "$(CC) $(CFLAGS) -c -o %s %s"\n' "$$obj" "$$src"; \
-	      printf '  }'; \
-	    fi; \
+	    rel=$${src#$(SRCDIR)/}; \
+	    obj=$(BUILDDIR)/$${rel%.c}.o; \
+	    if [ "$$first" -eq 1 ]; then first=0; else printf ',\n'; fi; \
+	    printf '  {\n'; \
+	    printf '    "directory": "%s",\n' "$$(pwd)"; \
+	    printf '    "file": "%s/%s",\n' "$$(pwd)" "$$src"; \
+	    printf '    "output": "%s",\n' "$$obj"; \
+	    printf '    "command": "$(CC) $(CFLAGS) -c -o %s %s"\n' "$$obj" "$$src"; \
+	    printf '  }'; \
 	  done; \
 	  printf '\n]\n'; \
 	} > $@
-
-.PHONY: compile_commands
-compile_commands: $(COMPILE_COMMANDS)
 
 # ---------------------------------------------------------------------------
 # Utility targets
@@ -395,7 +398,7 @@ test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl
 
 format:
 	@echo "Formatting source files..."
-	clang-format -i $(SRCDIR)/*.c $(INCDIR)/*.h 2>/dev/null || true
+	@find $(SRCDIR) $(INCDIR) $(TESTDIR) -name '*.[ch]' | xargs clang-format -i
 
 help:
 	@echo "Usage: make [TARGET] [OPTIONS]"

@@ -3,9 +3,9 @@
 
 #include <stumpless.h>
 #include <stumpless/level/debug.h>
+#include <stumpless/level/err.h>
 #include <stumpless/level/info.h>
 #include <stumpless/level/warning.h>
-#include <stumpless/level/err.h>
 #include <stumpless/target/stream.h>
 
 /* Open a stdout log target. Call once at startup before any stump_* usage. */
