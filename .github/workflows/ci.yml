@@ -24,13 +24,15 @@ jobs:
         id: submodules
         run: echo "hash=$(git submodule status | sha256sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
 
+      - name: Get Makefile hash
+        id: makefile
+        run: echo "hash=$(sha256sum Makefile | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
       - name: Cache third-party builds
         uses: actions/cache@v4
         with:
           path: build/debug/third_party
-          key: ${{ runner.os }}-thirdparty-${{ steps.submodules.outputs.hash }}
-          restore-keys: |
-            ${{ runner.os }}-thirdparty-
+          key: ${{ runner.os }}-thirdparty-${{ steps.submodules.outputs.hash }}-${{ steps.makefile.outputs.hash }}
 
       - name: Build third-party libraries
         run: make third-party
