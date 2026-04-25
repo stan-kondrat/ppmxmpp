@@ -37,8 +37,8 @@ void storage_db_bind_text(storage_stmt_t *stmt, int idx, const char *value);
 /* Step the statement; returns SQLITE_ROW on success, or error code. */
 int storage_db_step(storage_stmt_t *stmt);
 
-/* Return the 64-bit integer value of column 0. */
-long long storage_db_column_int64(storage_stmt_t *stmt);
+/* Return the 64-bit integer value of the given column. */
+long long storage_db_column_int64(storage_stmt_t *stmt, int col);
 
 /* Return the text value of column 0 as a null-terminated string.
  * Caller must not free the returned pointer. */

@@ -1,5 +1,63 @@
 # ppmxmpp - xmpp-server
 
+## File Structure
+
+```
+.
+├── Makefile                  # Build orchestration (third-party + server targets)
+├── README.md                 # This file
+├── config/
+│   └── ppmxmpp.conf          # Default server configuration file
+├── data/                     # Runtime data (SQLite DB, TLS certificates)
+├── docs/
+│   ├── plan/                 # Development plan and step-by-step design docs
+│   └── specs/                # RFC/XEP specification references
+├── include/
+│   ├── config.h              # Config module header
+│   ├── log.h                 # Logging module header
+│   ├── server.h              # Server module header
+│   ├── storage/              # Database and user storage headers
+│   ├── tls.h                 # TLS module header
+│   ├── xmpp.h                # XMPP protocol module header
+│   └── xmpp_sasl.h           # SASL authentication module header
+├── scripts/                  # Utility scripts
+├── src/
+│   ├── main.c                # Application entry point
+│   ├── config.c              # Config parsing implementation
+│   ├── log.c                 # Logging implementation
+│   ├── server.c              # Server event loop implementation
+│   ├── storage/              # Database and user storage implementations
+│   ├── tls.c                 # TLS certificate/key management
+│   ├── xmpp.c                # XMPP protocol handling (stream negotiation, bind)
+│   └── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
+├── test_e2e/                 # End-to-end integration tests (shell scripts)
+│   ├── _common.sh            # Shared test helpers (sourced by every test)
+│   ├── auth.sh               # E2E test for authentication
+│   ├── tls_auto_generation.sh # E2E test for TLS cert auto-generation
+│   └── tls_connection.sh     # E2E test for TLS connection
+├── tests/                    # Unit tests (C, using cmocka)
+│   ├── test_config.c         # Config module unit tests
+│   ├── test_db.c             # Database module unit tests
+│   ├── test_server.c         # Server module unit tests
+│   ├── test_users.c          # Users module unit tests
+│   └── test_xmpp_sasl.c      # XMPP SASL authentication unit tests
+├── third_party/              # Git-submodule third-party libraries
+│   ├── cmocka/               # Unit testing framework (CMake)
+│   ├── libconfig/            # Configuration file parsing (CMake)
+│   ├── libstrophe/           # XMPP protocol library (Autotools; requires expat/libxml2 + OpenSSL)
+│   ├── libuv/                # Async I/O library (CMake)
+│   ├── mbedtls/              # TLS / crypto library (CMake)
+│   ├── sqlite/               # Embedded database (Custom make)
+│   └── stumpless/            # Logging library (CMake)
+├── docs/specs/               # RFC/XEP specs cross-checked against the implementation
+│   ├── rfc4616-sasl-plain.txt  # SASL PLAIN mechanism
+│   ├── rfc6120-xmpp-core.txt   # XMPP Core
+│   ├── rfc7622-jid-format.txt  # XMPP JID format
+│   ├── xep-0030-service-discovery.xml
+│   └── xep-0199-xmpp-ping.xml
+└── build/                    # Build output directories (debug/asan)
+```
+
 ## Dependencies
 
 ### Build tools
@@ -9,23 +67,6 @@
 - `gcc` or `clang`
 - `autoconf`, `automake`, `libtool` — required by libstrophe (Autotools-based)
 - `python3-jsonschema` — required by mbedtls to generate PSA crypto driver wrappers
-
-On Void Linux:
-```
-sudo xbps-install -S cmake make gcc autoconf automake libtool python3-jsonschema
-```
-
-### Third-party libraries (bundled as git submodules)
-
-| Library      | Build system | Notes                              |
-|--------------|--------------|------------------------------------|
-| mbedtls      | CMake        | TLS / crypto                       |
-| libuv        | CMake        | Async I/O                          |
-| libstrophe   | Autotools    | XMPP protocol; requires expat/libxml2 + OpenSSL |
-| sqlite       | Custom make  | Embedded database                  |
-| stumpless    | CMake        | Logging                            |
-| cmocka       | CMake        | Unit testing                       |
-| libconfig    | CMake        | Configuration file parsing         |
 
 Initialize submodules after cloning:
 ```
@@ -56,38 +97,23 @@ Override static/shared per library (default: static=YES, shared=NO):
 make third-party LIBUV_SHARED=YES SQLITE_SHARED=YES
 ```
 
+## Testing
+
+Run unit tests (C, cmocka):
+```
+make test
+```
+
+Run end-to-end tests (shell scripts):
+```
+make test-e2e
+```
+
 ## Configuration
 
 The default config file is `config/ppmxmpp.conf`. It is created with defaults on first run if it does not exist. A different path can be passed with `--config <file>`.
 
 Command-line arguments always override values from the config file.
-
-### db_path
-
-Config file: `db_path`
-Argument: `--db-path`
-
-Path to the SQLite database file. Directories are created automatically if they do not exist.
-Default: `data/ppmxmpp.db`.
-
-### log_level
-
-Config file: `log_level`
-Argument: `--log-level`
-
-Sets the logging verbosity. Accepted values: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.
-Default: `INFO`.
-
-## E2E Testing
-
-Scripts live in `test_e2e/`. Each test starts a temporary server instance and cleans up after itself. Pass `--debug` to any script to keep the temp directory on failure for inspection.
-
-Shared helpers are in `test_e2e/_common.sh` (sourced by every test, not run directly).
-
-### Tests
-
-- `tls_auto_generation.sh` — verifies ppmxmpp auto-generates a self-signed cert and key when TLS is enabled but no files exist; checks CN=localhost and SAN=localhost (requires: `openssl`)
-- `tls_connection.sh` — generates a cert with openssl, starts ppmxmpp configured to use it, and verifies TCP reachability on the TLS port and that the server log references the configured cert path (requires: `openssl`)
 
 ### Cleaning
 

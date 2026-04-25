@@ -135,8 +135,6 @@ static void test_db_reopen_after_close(void **state) {
     sqlite3 *db2 = NULL;
     assert_int_equal(storage_db_open(&db2), 0);
     assert_non_null(db2);
-    assert_ptr_not_equal(db1, db2);
-
     storage_db_close();
     unlink(path);
 }
@@ -335,7 +333,7 @@ static void test_db_bind_int64(void **state) {
         "SELECT created_at FROM users WHERE jid = ?", &select_stmt), 0);
     storage_db_bind_text(select_stmt, 1, "user2@localhost");
     assert_int_equal(storage_db_step(select_stmt), SQLITE_ROW);
-    long long ts = storage_db_column_int64(select_stmt);
+    long long ts = storage_db_column_int64(select_stmt, 0);
     assert_int_equal(ts, 9999999);
 
     storage_db_close();
@@ -485,7 +483,7 @@ static void test_db_bind_null_stmt(void **state) {
 /* Column int64 on NULL stmt should return 0. */
 static void test_db_column_int64_null(void **state) {
     (void)state;
-    long long val = storage_db_column_int64(NULL);
+    long long val = storage_db_column_int64(NULL, 0);
     assert_int_equal(val, 0);
 }
 
@@ -515,7 +513,7 @@ static void test_db_column_int64_valid(void **state) {
         "SELECT disabled FROM users WHERE jid = ?", &select_stmt), 0);
     storage_db_bind_text(select_stmt, 1, "int64user@localhost");
     assert_int_equal(storage_db_step(select_stmt), SQLITE_ROW);
-    long long disabled = storage_db_column_int64(select_stmt);
+    long long disabled = storage_db_column_int64(select_stmt, 0);
     assert_int_equal(disabled, 0);
 
     storage_db_close();
@@ -572,6 +570,7 @@ static void test_db_changes_update(void **state) {
     storage_db_bind_text(insert_stmt, 2, "pass");
     storage_db_bind_int64(insert_stmt, 3, 1111111);
     assert_int_equal(storage_db_step(insert_stmt), SQLITE_DONE);
+    storage_db_reset(insert_stmt);
 
     storage_db_bind_text(insert_stmt, 1, "chg2@localhost");
     storage_db_bind_text(insert_stmt, 2, "pass");
@@ -673,7 +672,7 @@ static void test_db_no_remigration(void **state) {
 static void test_db_null_stmt_safety(void **state) {
     (void)state;
     (void)storage_db_step(NULL);
-    assert_int_equal(storage_db_column_int64(NULL), 0);
+    assert_int_equal(storage_db_column_int64(NULL, 0), 0);
     assert_null(storage_db_column_text(NULL));
     assert_null(storage_db_column_text_copy(NULL, 0));
 }

@@ -50,6 +50,7 @@ TP_CFLAGS   := \
     -I$(THIRDPARTY)/mbedtls/tf-psa-crypto/drivers/builtin/include \
     -I$(THIRDPARTY)/libuv/include \
     -I$(THIRDPARTY)/libstrophe \
+    -I$(THIRDPARTY)/libstrophe/src \
     -I$(THIRDPARTY)/sqlite \
     -I$(THIRDPARTY)/stumpless/include \
     -I$(TPBUILD)/cmocka/include \
@@ -66,6 +67,7 @@ TP_LDFLAGS  := \
     $(TPBUILD)/stumpless/libstumpless.a \
     $(TPBUILD)/cmocka/libcmocka.a \
     $(TPBUILD)/libconfig/out/libconfig.a \
+    -lexpat -lz -lresolv \
     -lpthread -ldl -lm
 
 CFLAGS      := -std=c2x -D_GNU_SOURCE -Wall -Wextra -Wpedantic -Wshadow -Wconversion \
@@ -181,7 +183,7 @@ $(LIBSTROPHE_STAMP):
 	mkdir -p $(LIBSTROPHE_BUILD)
 	cd $(LIBSTROPHE_SRC) && test -f configure || autoreconf -fi
 	cd $(LIBSTROPHE_BUILD) && $(abspath $(LIBSTROPHE_SRC))/configure \
-	    --prefix=$(abspath $(LIBSTROPHE_BUILD)) $(LIBSTROPHE_FLAGS)
+	    --prefix=$(abspath $(LIBSTROPHE_BUILD)) --disable-tls $(LIBSTROPHE_FLAGS)
 	$(MAKE) -C $(LIBSTROPHE_BUILD) install
 	@touch $@
 
@@ -304,6 +306,7 @@ third-party: $(THIRDPARTY_STAMPS)
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
 TEST_BINS   := $(patsubst $(TESTDIR)/%.c,$(BUILDDIR)/%,$(TEST_SRCS))
+TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl,$(TEST_BINS))
 
 # Objects shared between tests and the main binary (everything except main.o)
 LIB_OBJS    := $(filter-out $(BUILDDIR)/main.o,$(OBJS))
@@ -312,11 +315,13 @@ TEST_LDFLAGS := \
     $(TPBUILD)/mbedtls/libmbedtls.a \
     $(TPBUILD)/mbedtls/libmbedx509.a \
     $(TPBUILD)/mbedtls/library/libtfpsacrypto.a \
+    $(TPBUILD)/libstrophe/lib/libstrophe.a \
     $(TPBUILD)/cmocka/libcmocka.a \
     $(TPBUILD)/libconfig/out/libconfig.a \
     $(TPBUILD)/stumpless/libstumpless.a \
     $(THIRDPARTY)/sqlite/libsqlite3.a \
     $(TPBUILD)/libuv/libuv.a \
+    -lexpat -lz -lresolv \
     -lpthread -ldl -lm
 
 all: $(THIRDPARTY_STAMPS) $(TARGET) $(COMPILE_COMMANDS)
@@ -332,6 +337,16 @@ $(BUILDDIR)/storage/%.o: $(SRCDIR)/storage/%.c | $(BUILDDIR)/storage
 
 $(BUILDDIR)/%: $(TESTDIR)/%.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include -o $@ $^ $(TEST_LDFLAGS)
+
+# Dedicated rule for test_xmpp_sasl (needs libstrophe + its deps)
+XMPP_AUTH_TEST_LDFLAGS := \
+    $(TPBUILD)/libstrophe/lib/libstrophe.a \
+    $(TEST_LDFLAGS) \
+    -lexpat -lssl -lcrypto -lz -lresolv
+
+$(BUILDDIR)/test_xmpp_sasl: $(TESTDIR)/test_xmpp_sasl.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
@@ -375,8 +390,8 @@ clean:
 distclean: clean
 	rm -f $(SQLITE_STAMP)
 
-test: $(THIRDPARTY_STAMPS) $(TEST_BINS)
-	@for t in $(TEST_BINS); do echo "--- $$t ---"; $$t; done
+test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl
+	@for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl; do echo "--- $$t ---"; $$t; done
 
 format:
 	@echo "Formatting source files..."

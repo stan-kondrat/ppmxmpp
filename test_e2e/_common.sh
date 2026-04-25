@@ -66,6 +66,16 @@ start_server() {
     echo $! > "$pid_file"
 }
 
+# start_server_buffered CONFIG LOG PIDFILE
+# Same as start_server but uses stdbuf to force line-buffered stdout
+# so stumpless logs appear immediately in the log file.
+start_server_buffered() {
+    local config="$1" log_file="$2" pid_file="$3"
+    touch "$log_file"
+    stdbuf -oL -eL "$SERVER_BIN" --config "$config" >> "$log_file" 2>&1 &
+    echo $! > "$pid_file"
+}
+
 # stop_server
 # Sends SIGTERM to the server and waits for it to exit, flushing its logs.
 # Safe to call even if the server is already dead.

@@ -254,11 +254,11 @@ int storage_db_step(storage_stmt_t *stmt) {
     return sqlite3_step(stmt->stmt);
 }
 
-long long storage_db_column_int64(storage_stmt_t *stmt) {
+long long storage_db_column_int64(storage_stmt_t *stmt, int col) {
     if (!stmt || !stmt->stmt) {
         return 0;
     }
-    return sqlite3_column_int64(stmt->stmt, 0);
+    return sqlite3_column_int64(stmt->stmt, col);
 }
 
 const char *storage_db_column_text(storage_stmt_t *stmt) {
