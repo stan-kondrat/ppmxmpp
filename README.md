@@ -2,9 +2,11 @@
 
 ## Features
 
+- STARTTLS negotiation (RFC 6120 §5) — required before authentication
 - SASL PLAIN authentication (RFC 4616 + RFC 7622)
-- STARTTLS negotiation (RFC 6120 §5)
-- Stream management and bind
+- Resource bind (RFC 6120 §7)
+- Stream error handling (RFC 6120 §4.9) with graceful stream close
+- State-machine-enforced protocol ordering: CONNECTED → STREAM_OPENED_PLAINTEXT → TLS_HANDSHAKING → STREAM_OPENED_TLS → STREAM_OPENED_AUTHENTICATED → RESOURCE_BOUND → CONNECTED
 
 ## File Structure
 
@@ -46,7 +48,11 @@
 │   ├── test_db.c             # Database module unit tests
 │   ├── test_server.c         # Server module unit tests
 │   ├── test_users.c          # Users module unit tests
-│   └── test_xmpp_sasl.c      # XMPP SASL authentication and STARTTLS negotiation unit tests
+│   ├── test_xmpp_helpers.c   # Shared XMPP test helpers (mock write, DB setup, SASL feed)
+│   ├── test_xmpp_helpers.h   # Shared XMPP test helpers header
+│   ├── test_xmpp_sasl.c      # SASL PLAIN authentication unit tests
+│   ├── test_xmpp_starttls.c  # STARTTLS negotiation unit tests
+│   └── test_xmpp_state.c     # XMPP state machine unit tests (protocol ordering)
 ├── third_party/              # Git-submodule third-party libraries
 │   ├── cmocka/               # Unit testing framework (CMake)
 │   ├── libconfig/            # Configuration file parsing (CMake)
@@ -57,7 +63,7 @@
 │   └── stumpless/            # Logging library (CMake)
 ├── docs/specs/               # RFC/XEP specs cross-checked against the implementation
 │   ├── rfc4616-sasl-plain.txt  # SASL PLAIN mechanism
-   │   ├── rfc6120-xmpp-core.txt   # XMPP Core (RFC 6120 §5 STARTTLS, §4.9 stream errors)
+│   ├── rfc6120-xmpp-core.txt   # XMPP Core (RFC 6120 §5 STARTTLS, §4.9 stream errors)
 │   ├── rfc7622-jid-format.txt  # XMPP JID format
 │   ├── xep-0030-service-discovery.xml
 │   └── xep-0199-xmpp-ping.xml
