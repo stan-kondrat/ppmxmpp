@@ -1,5 +1,11 @@
 # ppmxmpp - xmpp-server
 
+## Features
+
+- SASL PLAIN authentication (RFC 4616 + RFC 7622)
+- STARTTLS negotiation (RFC 6120 §5)
+- Stream management and bind
+
 ## File Structure
 
 ```
@@ -40,7 +46,7 @@
 │   ├── test_db.c             # Database module unit tests
 │   ├── test_server.c         # Server module unit tests
 │   ├── test_users.c          # Users module unit tests
-│   └── test_xmpp_sasl.c      # XMPP SASL authentication unit tests
+│   └── test_xmpp_sasl.c      # XMPP SASL authentication and STARTTLS negotiation unit tests
 ├── third_party/              # Git-submodule third-party libraries
 │   ├── cmocka/               # Unit testing framework (CMake)
 │   ├── libconfig/            # Configuration file parsing (CMake)
@@ -51,7 +57,7 @@
 │   └── stumpless/            # Logging library (CMake)
 ├── docs/specs/               # RFC/XEP specs cross-checked against the implementation
 │   ├── rfc4616-sasl-plain.txt  # SASL PLAIN mechanism
-│   ├── rfc6120-xmpp-core.txt   # XMPP Core
+   │   ├── rfc6120-xmpp-core.txt   # XMPP Core (RFC 6120 §5 STARTTLS, §4.9 stream errors)
 │   ├── rfc7622-jid-format.txt  # XMPP JID format
 │   ├── xep-0030-service-discovery.xml
 │   └── xep-0199-xmpp-ping.xml

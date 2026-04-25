@@ -526,6 +526,189 @@ static void test_xmpp_sasl_forbidden_localpart(void** state) {
   teardown_test_db();
 }
 
+/* Test 14: STARTTLS — client requests TLS, server sends <proceed/>,
+ * client sends stream restart, server sends features with SASL PLAIN. */
+static void test_xmpp_starttls_proceed(void** state) {
+  (void)state;
+  xmpp_session_t ctx;
+  xmpp_session_reset(&ctx);
+  g_write_len = 0;
+
+  /* Step 1: Stream negotiation. */
+  const char* client_hello = "<?xml version='1.0'?>"
+                              "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                              "xmlns='jabber:client' to='localhost' version='1.0' "
+                              "xml:lang='en'>";
+  int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+  assert_true(buf_contains("<mechanism>PLAIN</mechanism>"));
+
+  /* Step 2: Client requests STARTTLS. */
+  const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
+  g_write_len = 0;
+  rc = xmpp_feed(&ctx, starttls, strlen(starttls), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_STARTTLS);
+  assert_true(buf_contains("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"));
+
+  /* Step 3: Stream restart after TLS handshake (RFC 5426 §4.2). */
+  g_write_len = 0;
+  const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                                "xmlns='jabber:client' to='localhost' version='1.0' "
+                                "xml:lang='en'>";
+  rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+  assert_true(buf_contains("<stream:stream"));
+  assert_true(buf_contains("<mechanism>PLAIN</mechanism>"));
+
+  xmpp_session_cleanup(&ctx);
+}
+
+/* Test 15: STARTTLS full flow — stream → STARTTLS → stream restart → auth → bind. */
+static void test_xmpp_starttls_full_flow(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+  assert_non_null(db_path);
+
+  xmpp_session_t ctx;
+  xmpp_session_reset(&ctx);
+  g_write_len = 0;
+
+  /* Step 1: Initial stream. */
+  const char* client_hello = "<?xml version='1.0'?>"
+                              "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                              "xmlns='jabber:client' to='localhost' version='1.0' "
+                              "xml:lang='en'>";
+  int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+
+  /* Step 2: Client requests STARTTLS. */
+  const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
+  g_write_len = 0;
+  rc = xmpp_feed(&ctx, starttls, strlen(starttls), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_STARTTLS);
+  assert_true(buf_contains("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"));
+
+  /* Step 3: Stream restart after TLS. */
+  g_write_len = 0;
+  const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                                "xmlns='jabber:client' to='localhost' version='1.0' "
+                                "xml:lang='en'>";
+  rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+
+  /* Step 4: SASL PLAIN auth. */
+  rc = feed_sasl_plain(&ctx, "", "testuser", "testpass");
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_AUTHED);
+  assert_true(buf_contains("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"));
+
+  /* Step 5: Stream restart after auth. */
+  g_write_len = 0;
+  const char* auth_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                              "xmlns='jabber:client' to='localhost' version='1.0' "
+                              "xml:lang='en'>";
+  rc = xmpp_feed(&ctx, auth_restart, strlen(auth_restart), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_BIND);
+  assert_true(buf_contains("<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"));
+  assert_true(buf_contains("<required/></bind>"));
+
+  /* Step 6: Bind IQ. */
+  const char* bind_iq = "<iq type='set' id='bind1' xmlns='jabber:client'>"
+                        "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>"
+                        "</iq>";
+  rc = xmpp_feed(&ctx, bind_iq, strlen(bind_iq), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
+  assert_true(buf_contains("<iq type='result'"));
+  assert_true(buf_contains("<jid>testuser@localhost</jid>"));
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* Test 16: STARTTLS with wrong namespace — should send <failure>. */
+static void test_xmpp_starttls_bad_namespace(void** state) {
+  (void)state;
+  xmpp_session_t ctx;
+  xmpp_session_reset(&ctx);
+  g_write_len = 0;
+
+  /* Stream negotiation. */
+  const char* client_hello = "<?xml version='1.0'?>"
+                              "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                              "xmlns='jabber:client' to='localhost' version='1.0' "
+                              "xml:lang='en'>";
+  int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+
+  /* STARTTLS with wrong namespace. */
+  const char* starttls_bad = "<starttls xmlns='wrong:namespace'/>";
+  g_write_len = 0;
+  rc = xmpp_feed(&ctx, starttls_bad, strlen(starttls_bad), mock_write, NULL);
+  assert_int_equal(rc, -1);
+  assert_int_equal(ctx.state, XMPP_STATE_FAILED);
+  assert_true(buf_contains("<failure xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"));
+  assert_true(buf_contains("<invalid-namespace/>"));
+
+  xmpp_session_cleanup(&ctx);
+}
+
+/* Test 17: STARTTLS then auth — verify parser was reset correctly
+ * (no <?xml?> declaration in stream restart, parser handles it). */
+static void test_xmpp_starttls_parser_reset(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  xmpp_session_reset(&ctx);
+  g_write_len = 0;
+
+  /* Step 1: Initial stream. */
+  const char* client_hello = "<?xml version='1.0'?>"
+                              "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                              "xmlns='jabber:client' to='localhost' version='1.0' "
+                              "xml:lang='en'>";
+  int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+
+  /* Step 2: STARTTLS. */
+  const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
+  g_write_len = 0;
+  rc = xmpp_feed(&ctx, starttls, strlen(starttls), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_STARTTLS);
+  assert_true(buf_contains("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"));
+
+  /* Step 3: Stream restart WITHOUT <?xml?> declaration (RFC 6120 §4.3.3). */
+  g_write_len = 0;
+  const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                                "xmlns='jabber:client' to='localhost' version='1.0' "
+                                "xml:lang='en'>";
+  rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES);
+
+  /* Step 4: Auth after STARTTLS stream restart. */
+  rc = feed_sasl_plain(&ctx, "", "testuser", "testpass");
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_AUTHED);
+  assert_true(buf_contains("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"));
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
 int main(void) {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_xmpp_stream_negotiation),
@@ -541,6 +724,10 @@ int main(void) {
       cmocka_unit_test(test_xmpp_sasl_authzid_match),
       cmocka_unit_test(test_xmpp_sasl_authzid_mismatch),
       cmocka_unit_test(test_xmpp_sasl_forbidden_localpart),
+      cmocka_unit_test(test_xmpp_starttls_proceed),
+      cmocka_unit_test(test_xmpp_starttls_full_flow),
+      cmocka_unit_test(test_xmpp_starttls_bad_namespace),
+      cmocka_unit_test(test_xmpp_starttls_parser_reset),
   };
   return cmocka_run_group_tests(tests, NULL, NULL);
 }
