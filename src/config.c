@@ -14,20 +14,85 @@ static const char *LOG_LEVELS[] = {
     "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL", NULL
 };
 
-int config_parse_log_level(const char *level) {
-    for (int i = 0; LOG_LEVELS[i] != NULL; i++) {
-        if (strcasecmp(level, LOG_LEVELS[i]) == 0)
-            return i;
+static server_config_t default_server_config;
+server_config_t server_config;
+
+int config_set_db_path(const char *path, server_config_t *out) {
+    if (!path || path[0] == '\0') {
+        stump_er("db_path must not be empty");
+        return -1;
     }
+    snprintf(out->db_path, sizeof(out->db_path), "%s", path);
+    return 0;
+}
+
+int config_set_log_level(const char *level, server_config_t *out) {
+    for (int i = 0; LOG_LEVELS[i] != NULL; i++) {
+        if (strcasecmp(level, LOG_LEVELS[i]) == 0) {
+            snprintf(out->log_level, sizeof(out->log_level), "%s", LOG_LEVELS[i]);
+            return 0;
+        }
+    }
+    stump_er("invalid log_level '%s'", level);
     return -1;
 }
 
-static int create_default_file(const char *path) {
+static int config_parse_cfg(config_t *cfg, server_config_t *out) {
+    const char *val;
+
+    if (config_lookup_string(cfg, "db_path", &val) &&
+            config_set_db_path(val, out) != 0)
+        return -1;
+
+    if (config_lookup_string(cfg, "log_level", &val) &&
+            config_set_log_level(val, out) != 0)
+        return -1;
+
+    return 0;
+}
+
+server_config_t config_parse_default_config(void) {
+    config_t cfg;
+    config_init(&cfg);
+
+    if (!config_read_string(&cfg, DEFAULT_CONFIG_CONTENT)) {
+        fprintf(stderr, "fatal: embedded default config is invalid: line %d - %s\n",
+                config_error_line(&cfg), config_error_text(&cfg));
+        config_destroy(&cfg);
+        exit(1);
+    }
+
+    default_server_config = (server_config_t){0};
+
+    if (config_parse_cfg(&cfg, &default_server_config) != 0 ||
+            default_server_config.db_path[0] == '\0' ||
+            default_server_config.log_level[0] == '\0') {
+        fprintf(stderr, "fatal: embedded default config missing or invalid required fields\n");
+        config_destroy(&cfg);
+        exit(1);
+    }
+
+    config_destroy(&cfg);
+    return default_server_config;
+}
+
+
+int config_create_default(const char *path) {
     char dir[256];
     snprintf(dir, sizeof(dir), "%s", path);
     char *slash = strrchr(dir, '/');
     if (slash) {
         *slash = '\0';
+        for (char *p = dir + 1; *p; p++) {
+            if (*p == '/') {
+                *p = '\0';
+                if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
+                    stump_er("cannot create directory '%s': %s", dir, strerror(errno));
+                    return -1;
+                }
+                *p = '/';
+            }
+        }
         if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
             stump_er("cannot create directory '%s': %s", dir, strerror(errno));
             return -1;
@@ -45,50 +110,24 @@ static int create_default_file(const char *path) {
     return 0;
 }
 
-int config_load(const char *path, const char *cli_log_level, server_config_t *out) {
+int config_load(const char *path) {
     config_t cfg;
     config_init(&cfg);
 
     if (!config_read_file(&cfg, path)) {
-        if (config_error_line(&cfg) == 0) {
-            if (create_default_file(path) != 0) {
-                config_destroy(&cfg);
-                return -1;
-            }
-            if (!config_read_file(&cfg, path)) {
-                stump_er("%s:%d - %s",
-                         config_error_file(&cfg),
-                         config_error_line(&cfg),
-                         config_error_text(&cfg));
-                config_destroy(&cfg);
-                return -1;
-            }
-        } else {
-            stump_er("%s:%d - %s",
-                     config_error_file(&cfg),
-                     config_error_line(&cfg),
-                     config_error_text(&cfg));
-            config_destroy(&cfg);
-            return -1;
-        }
+        stump_er("%s:%d - %s",
+                 config_error_file(&cfg),
+                 config_error_line(&cfg),
+                 config_error_text(&cfg));
+        config_destroy(&cfg);
+        return -1;
     }
 
-    const char *log_level = DEFAULT_LOG_LEVEL;
-    if (cli_log_level) {
-        log_level = cli_log_level;
-    } else {
-        const char *val;
-        if (config_lookup_string(&cfg, "log_level", &val)) {
-            if (config_parse_log_level(val) < 0) {
-                stump_er("invalid log_level '%s' in %s", val, path);
-                config_destroy(&cfg);
-                return -1;
-            }
-            log_level = val;
-        }
+    server_config = default_server_config;
+    if (config_parse_cfg(&cfg, &server_config) != 0) {
+        config_destroy(&cfg);
+        return -1;
     }
-
-    snprintf(out->log_level, sizeof(out->log_level), "%s", log_level);
     config_destroy(&cfg);
     return 0;
 }
@@ -98,6 +137,5 @@ void config_print(const char *path, const server_config_t *cfg) {
     if (realpath(path, full_path) == NULL)
         snprintf(full_path, sizeof(full_path), "%s", path);
 
-    printf("Config file: %s\n", full_path);
-    printf("  log_level = %s\n", cfg->log_level);
+    stump_i("config file: \"%s\", db_path: \"%s\", log_level: \"%s\"", full_path, cfg->db_path, cfg->log_level);
 }

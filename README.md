@@ -1,4 +1,4 @@
-# xmpp-server
+# ppmxmpp - xmpp-server
 
 ## Dependencies
 
@@ -58,9 +58,17 @@ make third-party LIBUV_SHARED=YES SQLITE_SHARED=YES
 
 ## Configuration
 
-The default config file is `config/xmpp.conf`. It is created with defaults on first run if it does not exist. A different path can be passed with `--config <file>`.
+The default config file is `config/ppmxmpp.conf`. It is created with defaults on first run if it does not exist. A different path can be passed with `--config <file>`.
 
 Command-line arguments always override values from the config file.
+
+### db_path
+
+Config file: `db_path`
+Argument: `--db-path`
+
+Path to the SQLite database file. Directories are created automatically if they do not exist.
+Default: `data/ppmxmpp.db`.
 
 ### log_level
 

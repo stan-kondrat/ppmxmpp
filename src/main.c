@@ -1,18 +1,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <unistd.h>
 
 #include <mbedtls/version.h>
 #include <uv.h>
 #include <sqlite3.h>
 #include <stumpless/version.h>
+#ifdef TP_CMOCKA_LINK
 #include <cmocka_version.h>
+#endif
 #include <libconfig.h>
 
 #include "config.h"
 #include "log.h"
+#include "storage/db.h"
+#include "storage/users.h"
 
-#define VERSION "xmpp-server dev build"
+#define VERSION "ppmxmpp dev build"
 
 static void print_version(void) {
     printf("%s\n\n", VERSION);
@@ -27,9 +32,13 @@ static void print_version(void) {
            sv->major, sv->minor, sv->patch, TP_STUMPLESS_LINK);
     free(sv);
 
+#ifdef TP_CMOCKA_LINK
     printf("  cmocka:     %d.%d.%d  (%s)\n",
-           CMOCKA_VERSION_MAJOR, CMOCKA_VERSION_MINOR, CMOCKA_VERSION_MICRO,
-           TP_CMOCKA_LINK);
+            CMOCKA_VERSION_MAJOR, CMOCKA_VERSION_MINOR, CMOCKA_VERSION_MICRO,
+            TP_CMOCKA_LINK);
+#else
+    printf("  cmocka:     not built  (%s)\n", TP_CMOCKA_LINK);
+#endif
     printf("  libconfig:  %d.%d.%d  (%s)\n",
            LIBCONFIG_VER_MAJOR, LIBCONFIG_VER_MINOR, LIBCONFIG_VER_REVISION,
            TP_LIBCONFIG_LINK);
@@ -39,50 +48,84 @@ static void print_help(const char *progname) {
     printf("Usage: %s [OPTIONS]\n\n", progname);
     printf("Options:\n");
     printf("  --config <file>       Configuration file path (default: %s)\n", DEFAULT_CONFIG);
+    printf("  --db-path <path>      Database file path (default: %s)\n", server_config.db_path);
     printf("  --log-level <level>   Log level: TRACE, DEBUG, INFO, WARN, ERROR, FATAL\n");
     printf("  --version             Show version and third-party library versions\n");
     printf("  --help                Show this help message\n");
 }
 
 int main(int argc, char *argv[]) {
+    server_config = config_parse_default_config();
+
     const char *config_path = DEFAULT_CONFIG;
+    int         cli_config   = 0;
+    const char *cli_db_path  = NULL;
     const char *cli_log_level = NULL;
 
     static const struct option long_options[] = {
         {"config",    required_argument, NULL, 'c'},
+        {"db-path",   required_argument, NULL, 'd'},
         {"log-level", required_argument, NULL, 'l'},
         {"version",   no_argument,       NULL, 'v'},
         {"help",      no_argument,       NULL, 'h'},
         {NULL,        0,                 NULL,  0}
     };
 
+    log_init();
+
     int opt;
-    while ((opt = getopt_long(argc, argv, "c:l:vh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "c:d:lv", long_options, NULL)) != -1) {
         switch (opt) {
-        case 'c': config_path = optarg; break;
-        case 'l':
-            if (config_parse_log_level(optarg) < 0) {
-                stump_er("invalid log level '%s' (valid: TRACE DEBUG INFO WARN ERROR FATAL)",
-                         optarg);
-                return 1;
-            }
-            cli_log_level = optarg;
-            break;
-        case 'v': print_version(); return 0;
-        case 'h': print_help(argv[0]); return 0;
-        default:  print_help(argv[0]); return 1;
+        case 'c': config_path = optarg; cli_config = 1; break;
+        case 'd': cli_db_path = optarg; break;
+        case 'l': cli_log_level = optarg; break;
+        case 'v': print_version(); log_free(); return 0;
+        case 'h': print_help(argv[0]); log_free(); return 0;
+        default:  stump_er("unknown option"); print_help(argv[0]); log_free(); return 1;
         }
     }
 
-    log_init();
+    if (access(config_path, F_OK) != 0) {
+        if (cli_config) {
+            stump_er("config file not found: %s", config_path);
+            log_free();
+            return 1;
+        }
+        if (config_create_default(config_path) != 0) {
+            stump_er("failed to create default config: %s", config_path);
+            log_free();
+            return 1;
+        }
+    }
 
-    server_config_t cfg;
-    if (config_load(config_path, cli_log_level, &cfg) != 0) {
+    if (config_load(config_path) != 0) {
+        stump_er("failed to load config: %s", config_path);
         log_free();
         return 1;
     }
 
-    config_print(config_path, &cfg);
+    if (cli_log_level && config_set_log_level(cli_log_level, &server_config) != 0) {
+        stump_er("invalid --log-level: %s", cli_log_level);
+        log_free();
+        return 1;
+    }
+
+    if (cli_db_path && config_set_db_path(cli_db_path, &server_config) != 0) {
+        stump_er("invalid --db-path: %s", cli_db_path);
+        log_free();
+        return 1;
+    }
+
+    config_print(config_path, &server_config);
+
+    sqlite3 *db = NULL;
+    if (storage_db_open(&db) != 0) {
+        stump_er("failed to open database");
+        log_free();
+        return 1;
+    }
+
+    storage_db_close();
 
     log_free();
     return 0;

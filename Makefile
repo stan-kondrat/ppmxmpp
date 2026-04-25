@@ -1,4 +1,4 @@
-# xmpp-server Makefile
+# ppmxmpp Makefile
 
 .DEFAULT_GOAL := all
 
@@ -86,7 +86,7 @@ LDFLAGS     ?=
 # ---------------------------------------------------------------------------
 # Project sources
 # ---------------------------------------------------------------------------
-SRCS        := $(wildcard $(SRCDIR)/*.c)
+SRCS        := $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/storage/*.c)
 OBJS        := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 # Embed default config as a C string literal, rebuilt when the file changes
@@ -95,11 +95,11 @@ DEFAULT_CONFIG_OBJ := $(BUILDDIR)/default_config.o
 OBJS                += $(DEFAULT_CONFIG_OBJ)
 
 DEPS        := $(OBJS:.o=.d)
-TARGET      := $(BUILDDIR)/xmpp-server
+TARGET      := $(BUILDDIR)/ppmxmpp
 
-$(DEFAULT_CONFIG_SRC): config/xmpp.conf | $(BUILDDIR)
+$(DEFAULT_CONFIG_SRC): config/ppmxmpp.conf | $(BUILDDIR)
 	@{ \
-	  printf '/* generated from config/xmpp.conf — do not edit */\n'; \
+	  printf '/* generated from config/ppmxmpp.conf — do not edit */\n'; \
 	  printf '#include "config.h"\n\n'; \
 	  printf 'const char DEFAULT_CONFIG_CONTENT[] =\n'; \
 	  sed 's/\\/\\\\/g; s/"/\\"/g; s/.*/    "&\\n"/' $<; \
@@ -313,11 +313,17 @@ $(TARGET): $(OBJS) | $(BUILDDIR)
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(BUILDDIR)/storage/%.o: $(SRCDIR)/storage/%.c | $(BUILDDIR)/storage
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 $(BUILDDIR)/%: $(TESTDIR)/%.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include -o $@ $^ $(TEST_LDFLAGS)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
+
+$(BUILDDIR)/storage:
+	mkdir -p $(BUILDDIR)/storage
 
 # ---------------------------------------------------------------------------
 # compile_commands.json generator

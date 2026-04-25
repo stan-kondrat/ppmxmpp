@@ -6,7 +6,7 @@
 static struct stumpless_target *log_target;
 
 void log_init(void) {
-    log_target = stumpless_open_stdout_target("xmpp-server");
+    log_target = stumpless_open_stdout_target("ppmxmpp");
     stumpless_set_current_target(log_target);
 }
 
