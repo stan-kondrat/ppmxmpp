@@ -56,8 +56,8 @@ static sqlite3 *open_test_db(const char *db_path) {
     if (!f) return NULL;
     fprintf(f, "db_path = \"%s\";\n", db_path);
     fprintf(f, "log_level = \"ERROR\";\n");
-    fprintf(f, "listen_host = \"127.0.0.1\";\n");
-    fprintf(f, "listen_port = 5222;\n");
+    fprintf(f, "bind_host = \"127.0.0.1\";\n");
+    fprintf(f, "bind_port = 5222;\n");
     fclose(f);
 
     server_config = config_parse_default_config();

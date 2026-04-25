@@ -28,8 +28,8 @@ static int setup_test_config(const char *host, int port) {
     if (!f) return -1;
     fprintf(f, "db_path = \"%s\";\n", db_path);
     fprintf(f, "log_level = \"ERROR\";\n");
-    fprintf(f, "listen_host = \"%s\";\n", host);
-    fprintf(f, "listen_port = %d;\n", port);
+    fprintf(f, "bind_host = \"%s\";\n", host);
+    fprintf(f, "bind_port = %d;\n", port);
     fclose(f);
 
     server_config = config_parse_default_config();

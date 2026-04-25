@@ -10,6 +10,9 @@
 #include "config.h"
 #include "log.h"
 #include "server.h"
+#include "tls.h"
+
+#include <sys/stat.h>
 
 #define READ_BUF_SIZE 65536
 
@@ -28,6 +31,7 @@ typedef struct {
 } write_req_t;
 
 static uv_tcp_t         g_server;
+static uv_tcp_t         g_tls_server;
 static uv_signal_t      g_sigint;
 static uv_signal_t      g_sigterm;
 static _Atomic uint64_t g_next_id = 1;
@@ -162,39 +166,98 @@ static void on_signal(uv_signal_t *handle, int signum) {
 
 /* ------------------------------------------------------------------ start */
 
+int file_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
 int server_start(uv_loop_t *loop) {
-    struct sockaddr_in addr;
-    int r;
-
-    r = uv_ip4_addr(server_config.listen_host, server_config.listen_port, &addr);
-    if (r != 0) {
-        stump_er("invalid listen address %s:%d: %s",
-                 server_config.listen_host, server_config.listen_port,
-                 uv_strerror(r));
-        return -1;
+    if (!server_config.bind_enabled && !server_config.tls_enabled) {
+        stump_i("both bind and tls disabled, nothing to listen on");
+        return 0;
     }
 
-    uv_tcp_init(loop, &g_server);
-    /* g_server.data stays NULL — see close_walk_cb */
+    if (server_config.bind_enabled) {
+        struct sockaddr_in addr;
+        int r;
 
-    r = uv_tcp_bind(&g_server, (const struct sockaddr *)&addr, 0);
-    if (r != 0) {
-        stump_er("uv_tcp_bind %s:%d: %s",
-                 server_config.listen_host, server_config.listen_port,
-                 uv_strerror(r));
-        uv_close((uv_handle_t *)&g_server, NULL);
-        return -1;
+        r = uv_ip4_addr(server_config.bind_host, server_config.bind_port, &addr);
+        if (r != 0) {
+            stump_er("invalid listen address %s:%d: %s",
+                     server_config.bind_host, server_config.bind_port,
+                     uv_strerror(r));
+            return -1;
+        }
+
+        uv_tcp_init(loop, &g_server);
+        /* g_server.data stays NULL — see close_walk_cb */
+
+        r = uv_tcp_bind(&g_server, (const struct sockaddr *)&addr, 0);
+        if (r != 0) {
+            stump_er("uv_tcp_bind %s:%d: %s",
+                     server_config.bind_host, server_config.bind_port,
+                     uv_strerror(r));
+            uv_close((uv_handle_t *)&g_server, NULL);
+            return -1;
+        }
+
+        r = uv_listen((uv_stream_t *)&g_server, 128, on_new_connection);
+        if (r != 0) {
+            stump_er("uv_listen: %s", uv_strerror(r));
+            uv_close((uv_handle_t *)&g_server, NULL);
+            return -1;
+        }
+
+        stump_i("listening on %s:%d",
+                server_config.bind_host, server_config.bind_port);
     }
 
-    r = uv_listen((uv_stream_t *)&g_server, 128, on_new_connection);
-    if (r != 0) {
-        stump_er("uv_listen: %s", uv_strerror(r));
-        uv_close((uv_handle_t *)&g_server, NULL);
-        return -1;
-    }
+    if (server_config.tls_enabled) {
+        if (!file_exists(server_config.tls_cert_file) || !file_exists(server_config.tls_key_file)) {
+            stump_i("TLS enabled but cert/key missing, generating self-signed certificate");
+            if (generate_self_signed_cert(server_config.tls_cert_file, server_config.tls_key_file) != 0) {
+                stump_er("failed to generate self-signed certificate");
+                return -1;
+            }
+        }
 
-    stump_i("listening on %s:%d",
-            server_config.listen_host, server_config.listen_port);
+        struct sockaddr_in tls_addr;
+        int tls_r = uv_ip4_addr(server_config.tls_host, server_config.tls_port, &tls_addr);
+        if (tls_r != 0) {
+            stump_er("invalid TLS address %s:%d: %s",
+                     server_config.tls_host, server_config.tls_port,
+                     uv_strerror(tls_r));
+            if (server_config.bind_enabled)
+                uv_close((uv_handle_t *)&g_server, NULL);
+            return -1;
+        }
+
+        uv_tcp_init(loop, &g_tls_server);
+        g_tls_server.data = NULL;
+
+        tls_r = uv_tcp_bind(&g_tls_server, (const struct sockaddr *)&tls_addr, 0);
+        if (tls_r != 0) {
+            stump_er("uv_tcp_bind %s:%d: %s",
+                     server_config.tls_host, server_config.tls_port,
+                     uv_strerror(tls_r));
+            if (server_config.bind_enabled)
+                uv_close((uv_handle_t *)&g_server, NULL);
+            uv_close((uv_handle_t *)&g_tls_server, NULL);
+            return -1;
+        }
+
+        tls_r = uv_listen((uv_stream_t *)&g_tls_server, 128, on_new_connection);
+        if (tls_r != 0) {
+            stump_er("uv_listen TLS: %s", uv_strerror(tls_r));
+            if (server_config.bind_enabled)
+                uv_close((uv_handle_t *)&g_server, NULL);
+            uv_close((uv_handle_t *)&g_tls_server, NULL);
+            return -1;
+        }
+
+        stump_i("listening on TLS %s:%d",
+                server_config.tls_host, server_config.tls_port);
+    }
 
     uv_signal_init(loop, &g_sigint);
     uv_signal_start(&g_sigint, on_signal, SIGINT);

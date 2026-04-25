@@ -37,21 +37,67 @@ int config_set_log_level(const char *level, server_config_t *out) {
     return -1;
 }
 
-int config_set_listen_host(const char *host, server_config_t *out) {
+int config_set_bind_host(const char *host, server_config_t *out) {
     if (!host || host[0] == '\0') {
-        stump_er("listen_host must not be empty");
+        stump_er("bind_host must not be empty");
         return -1;
     }
-    snprintf(out->listen_host, sizeof(out->listen_host), "%s", host);
+    snprintf(out->bind_host, sizeof(out->bind_host), "%s", host);
     return 0;
 }
 
-int config_set_listen_port(int port, server_config_t *out) {
+int config_set_bind_port(int port, server_config_t *out) {
     if (port < 1 || port > 65535) {
-        stump_er("listen_port %d out of range [1, 65535]", port);
+        stump_er("bind_port %d out of range [1, 65535]", port);
         return -1;
     }
-    out->listen_port = port;
+    out->bind_port = port;
+    return 0;
+}
+
+int config_set_bind_enabled(int enabled, server_config_t *out) {
+    out->bind_enabled = enabled ? 1 : 0;
+    return 0;
+}
+
+int config_set_tls_enabled(int enabled, server_config_t *out) {
+    out->tls_enabled = enabled ? 1 : 0;
+    return 0;
+}
+
+int config_set_tls_host(const char *host, server_config_t *out) {
+    if (!host || host[0] == '\0') {
+        snprintf(out->tls_host, sizeof(out->tls_host), "%s", "0.0.0.0");
+        return 0;
+    }
+    snprintf(out->tls_host, sizeof(out->tls_host), "%s", host);
+    return 0;
+}
+
+int config_set_tls_port(int port, server_config_t *out) {
+    if (port < 0 || port > 65535) {
+        stump_er("tls_port %d out of range [0, 65535]", port);
+        return -1;
+    }
+    out->tls_port = port;
+    return 0;
+}
+
+int config_set_tls_cert_file(const char *path, server_config_t *out) {
+    if (!path || path[0] == '\0') {
+        snprintf(out->tls_cert_file, sizeof(out->tls_cert_file), "%s", "");
+        return 0;
+    }
+    snprintf(out->tls_cert_file, sizeof(out->tls_cert_file), "%s", path);
+    return 0;
+}
+
+int config_set_tls_key_file(const char *path, server_config_t *out) {
+    if (!path || path[0] == '\0') {
+        snprintf(out->tls_key_file, sizeof(out->tls_key_file), "%s", "");
+        return 0;
+    }
+    snprintf(out->tls_key_file, sizeof(out->tls_key_file), "%s", path);
     return 0;
 }
 
@@ -67,13 +113,31 @@ static int config_parse_cfg(config_t *cfg, server_config_t *out) {
             config_set_log_level(val, out) != 0)
         return -1;
 
-    if (config_lookup_string(cfg, "listen_host", &val) &&
-            config_set_listen_host(val, out) != 0)
+    if (config_lookup_string(cfg, "bind_host", &val) &&
+            config_set_bind_host(val, out) != 0)
         return -1;
 
-    if (config_lookup_int(cfg, "listen_port", &ival) &&
-            config_set_listen_port(ival, out) != 0)
+    if (config_lookup_int(cfg, "bind_port", &ival) &&
+            config_set_bind_port(ival, out) != 0)
         return -1;
+
+    if (config_lookup_bool(cfg, "bind_enabled", &ival))
+        config_set_bind_enabled(ival, out);
+
+    if (config_lookup_bool(cfg, "tls_enabled", &ival))
+        config_set_tls_enabled(ival, out);
+
+    if (config_lookup_string(cfg, "tls_host", &val))
+        config_set_tls_host(val, out);
+
+    if (config_lookup_int(cfg, "tls_port", &ival))
+        config_set_tls_port(ival, out);
+
+    if (config_lookup_string(cfg, "tls_cert_file", &val))
+        config_set_tls_cert_file(val, out);
+
+    if (config_lookup_string(cfg, "tls_key_file", &val))
+        config_set_tls_key_file(val, out);
 
     return 0;
 }
@@ -94,8 +158,8 @@ server_config_t config_parse_default_config(void) {
     if (config_parse_cfg(&cfg, &default_server_config) != 0 ||
             default_server_config.db_path[0] == '\0' ||
             default_server_config.log_level[0] == '\0' ||
-            default_server_config.listen_host[0] == '\0' ||
-            default_server_config.listen_port == 0) {
+            default_server_config.bind_host[0] == '\0' ||
+            default_server_config.bind_port == 0) {
         fprintf(stderr, "fatal: embedded default config missing or invalid required fields\n");
         config_destroy(&cfg);
         exit(1);
@@ -166,7 +230,9 @@ void config_print(const char *path, const server_config_t *cfg) {
     if (realpath(path, full_path) == NULL)
         snprintf(full_path, sizeof(full_path), "%s", path);
 
-    stump_i("config: file=\"%s\" db_path=\"%s\" log_level=\"%s\" listen=\"%s:%d\"",
+    stump_i("config: file=\"%s\" db_path=\"%s\" log_level=\"%s\" bind=\"%s:%d\" bind_enabled=%d tls_enabled=%d tls_host=\"%s\" tls_port=%d tls_cert=\"%s\" tls_key=\"%s\"",
             full_path, cfg->db_path, cfg->log_level,
-            cfg->listen_host, cfg->listen_port);
+            cfg->bind_host, cfg->bind_port,
+            cfg->bind_enabled, cfg->tls_enabled,
+            cfg->tls_host, cfg->tls_port, cfg->tls_cert_file, cfg->tls_key_file);
 }

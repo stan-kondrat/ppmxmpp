@@ -17,6 +17,7 @@
 #include "server.h"
 #include "storage/db.h"
 #include "storage/users.h"
+#include "tls.h"
 
 #define VERSION "ppmxmpp dev build"
 
@@ -115,6 +116,19 @@ int main(int argc, char *argv[]) {
         stump_er("invalid --db-path: %s", cli_db_path);
         log_free();
         return 1;
+    }
+
+    if (server_config.tls_enabled &&
+        server_config.tls_cert_file[0] != '\0' &&
+        server_config.tls_key_file[0] != '\0' &&
+        (!file_exists(server_config.tls_cert_file) ||
+            !file_exists(server_config.tls_key_file))) {
+        stump_i("TLS enabled but certificate or key missing, generating self-signed cert");
+        if (generate_self_signed_cert(server_config.tls_cert_file,
+                                      server_config.tls_key_file) != 0) {
+            stump_er("failed to generate TLS certificate");
+            return -1;
+        }
     }
 
     config_print(config_path, &server_config);

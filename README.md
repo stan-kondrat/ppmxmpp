@@ -78,7 +78,18 @@ Argument: `--log-level`
 Sets the logging verbosity. Accepted values: `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`.
 Default: `INFO`.
 
-## Cleaning
+## E2E Testing
+
+Scripts live in `test_e2e/`. Each test starts a temporary server instance and cleans up after itself. Pass `--debug` to any script to keep the temp directory on failure for inspection.
+
+Shared helpers are in `test_e2e/_common.sh` (sourced by every test, not run directly).
+
+### Tests
+
+- `tls_auto_generation.sh` — verifies ppmxmpp auto-generates a self-signed cert and key when TLS is enabled but no files exist; checks CN=localhost and SAN=localhost (requires: `openssl`)
+- `tls_connection.sh` — generates a cert with openssl, starts ppmxmpp configured to use it, and verifies TCP reachability on the TLS port and that the server log references the configured cert path (requires: `openssl`)
+
+### Cleaning
 
 ```
 make clean

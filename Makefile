@@ -59,7 +59,7 @@ TP_CFLAGS   := \
 TP_LDFLAGS  := \
     $(TPBUILD)/mbedtls/libmbedtls.a \
     $(TPBUILD)/mbedtls/libmbedx509.a \
-    $(TPBUILD)/mbedtls/libtfpsacrypto.a \
+    $(TPBUILD)/mbedtls/library/libtfpsacrypto.a \
     $(TPBUILD)/libuv/libuv.a \
     $(TPBUILD)/libstrophe/lib/libstrophe.a \
     $(THIRDPARTY)/sqlite/libsqlite3.a \
@@ -272,6 +272,16 @@ $(LIBCONFIG_STAMP):
 libconfig: $(LIBCONFIG_STAMP)
 
 # ---------------------------------------------------------------------------
+# E2E tests
+# ---------------------------------------------------------------------------
+E2E_TESTS := $(wildcard test_e2e/*.sh)
+E2E_TESTS := $(filter-out test_e2e/_%.sh,$(E2E_TESTS))
+
+.PHONY: test-e2e
+test-e2e: $(E2E_TESTS)
+	@for t in $(E2E_TESTS); do echo "--- $$t ---"; bash $$t; done
+
+# ---------------------------------------------------------------------------
 # Aggregate third-party target
 # ---------------------------------------------------------------------------
 THIRDPARTY_STAMPS := \
@@ -289,7 +299,7 @@ third-party: $(THIRDPARTY_STAMPS)
 # ---------------------------------------------------------------------------
 # Main target
 # ---------------------------------------------------------------------------
-.PHONY: all clean distclean test format help
+.PHONY: all clean distclean test test-e2e format help
 
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
@@ -299,6 +309,9 @@ TEST_BINS   := $(patsubst $(TESTDIR)/%.c,$(BUILDDIR)/%,$(TEST_SRCS))
 LIB_OBJS    := $(filter-out $(BUILDDIR)/main.o,$(OBJS))
 
 TEST_LDFLAGS := \
+    $(TPBUILD)/mbedtls/libmbedtls.a \
+    $(TPBUILD)/mbedtls/libmbedx509.a \
+    $(TPBUILD)/mbedtls/library/libtfpsacrypto.a \
     $(TPBUILD)/cmocka/libcmocka.a \
     $(TPBUILD)/libconfig/out/libconfig.a \
     $(TPBUILD)/stumpless/libstumpless.a \
@@ -385,6 +398,7 @@ help:
 	@echo "  clean        Remove build/ directory"
 	@echo "  distclean    clean + remove sqlite in-source build"
 	@echo "  test         Build and run tests"
+	@echo "  test-e2e     Run e2e shell scripts in test_e2e folder"
 	@echo "  format       Format source files with clang-format"
 	@echo "  compile_commands  Generate compile_commands.json"
 	@echo "  help         Show this help message"
