@@ -4,6 +4,7 @@
 #include "mbedtls/pk.h"
 #include "mbedtls/private/ctr_drbg.h"
 #include "mbedtls/private/entropy.h"
+#include "mbedtls/ssl.h"
 #include "mbedtls/x509_crt.h"
 
 #include <errno.h>
@@ -162,4 +163,59 @@ cleanup:
   psa_reset_key_attributes(&key_attrs);
 
   return (ret == 0) ? 0 : -1;
+}
+
+int tls_server_ctx_init(tls_server_ctx_t* ctx, const char* cert_path, const char* key_path) {
+  int ret;
+
+  mbedtls_ssl_config_init(&ctx->conf);
+  mbedtls_x509_crt_init(&ctx->cert);
+  mbedtls_pk_init(&ctx->key);
+
+  /* PSA crypto must be initialized for mbedtls RNG (idempotent). */
+  psa_crypto_init();
+
+  ret = mbedtls_x509_crt_parse_file(&ctx->cert, cert_path);
+  if (ret != 0) {
+    stump_er("tls: failed to load certificate '%s': -0x%04x", cert_path, -ret);
+    goto fail;
+  }
+
+  ret = mbedtls_pk_parse_keyfile(&ctx->key, key_path, NULL);
+  if (ret != 0) {
+    stump_er("tls: failed to load key '%s': -0x%04x", key_path, -ret);
+    goto fail;
+  }
+
+  ret = mbedtls_ssl_config_defaults(&ctx->conf,
+                                    MBEDTLS_SSL_IS_SERVER,
+                                    MBEDTLS_SSL_TRANSPORT_STREAM,
+                                    MBEDTLS_SSL_PRESET_DEFAULT);
+  if (ret != 0) {
+    stump_er("tls: ssl_config_defaults failed: -0x%04x", -ret);
+    goto fail;
+  }
+
+  mbedtls_ssl_conf_authmode(&ctx->conf, MBEDTLS_SSL_VERIFY_NONE);
+
+  ret = mbedtls_ssl_conf_own_cert(&ctx->conf, &ctx->cert, &ctx->key);
+  if (ret != 0) {
+    stump_er("tls: ssl_conf_own_cert failed: -0x%04x", -ret);
+    goto fail;
+  }
+
+  stump_i("tls: server context initialized (cert=%s)", cert_path);
+  return 0;
+
+fail:
+  mbedtls_ssl_config_free(&ctx->conf);
+  mbedtls_x509_crt_free(&ctx->cert);
+  mbedtls_pk_free(&ctx->key);
+  return -1;
+}
+
+void tls_server_ctx_free(tls_server_ctx_t* ctx) {
+  mbedtls_ssl_config_free(&ctx->conf);
+  mbedtls_x509_crt_free(&ctx->cert);
+  mbedtls_pk_free(&ctx->key);
 }
