@@ -113,7 +113,9 @@ static int uv_conn_write(conn_t* conn, const char* data, size_t len) {
 static int bio_send(void* ctx, const unsigned char* buf, size_t len) {
   conn_t* conn = (conn_t*)ctx;
   write_req_t* wr = malloc(sizeof(*wr) + len);
-  if (!wr) return MBEDTLS_ERR_NET_SEND_FAILED;
+  if (!wr) {
+    return MBEDTLS_ERR_NET_SEND_FAILED;
+  }
   memcpy(wr->data, buf, len);
   wr->buf = uv_buf_init(wr->data, (unsigned int)len);
   if (uv_write(&wr->req, (uv_stream_t*)&conn->client, &wr->buf, 1, write_cb) < 0) {
@@ -127,7 +129,9 @@ static int bio_send(void* ctx, const unsigned char* buf, size_t len) {
 static int bio_recv(void* ctx, unsigned char* buf, size_t len) {
   conn_t* conn = (conn_t*)ctx;
   size_t avail = conn->tls_in_len - conn->tls_in_pos;
-  if (avail == 0) return MBEDTLS_ERR_SSL_WANT_READ;
+  if (avail == 0) {
+    return MBEDTLS_ERR_SSL_WANT_READ;
+  }
   size_t n = avail < len ? avail : len;
   memcpy(buf, conn->tls_in_buf + conn->tls_in_pos, n);
   conn->tls_in_pos += n;
@@ -164,7 +168,9 @@ static int conn_write(void* ud, const char* data, size_t len) {
     size_t remaining = len;
     while (remaining > 0) {
       int r = mbedtls_ssl_write(&conn->ssl, p, remaining);
-      if (r == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+      if (r == MBEDTLS_ERR_SSL_WANT_WRITE) {
+        continue;
+      }
       if (r <= 0) {
         stump_er("conn %" PRIu64 ": ssl_write failed: -0x%04x", conn->id, -r);
         return -1;
@@ -200,7 +206,9 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     /* Compact consumed bytes, then append new data. */
     if (conn->tls_in_pos > 0) {
       size_t rem = conn->tls_in_len - conn->tls_in_pos;
-      if (rem > 0) memmove(conn->tls_in_buf, conn->tls_in_buf + conn->tls_in_pos, rem);
+      if (rem > 0) {
+        memmove(conn->tls_in_buf, conn->tls_in_buf + conn->tls_in_pos, rem);
+      }
       conn->tls_in_len = rem;
       conn->tls_in_pos = 0;
     }
@@ -230,7 +238,9 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     /* Decrypt available records and feed plaintext to XMPP. */
     char plain[READ_BUF_SIZE];
     int r = mbedtls_ssl_read(&conn->ssl, (unsigned char*)plain, sizeof(plain));
-    if (r == MBEDTLS_ERR_SSL_WANT_READ) return;
+    if (r == MBEDTLS_ERR_SSL_WANT_READ) {
+      return;
+    }
     if (r <= 0) {
       if (r != 0) {
         stump_d("conn %" PRIu64 ": ssl_read: -0x%04x", conn->id, -r);
@@ -311,9 +321,7 @@ static void accept_conn(uv_stream_t* server, int status, int is_tls) {
   }
 }
 
-static void on_new_connection(uv_stream_t* server, int status) {
-  accept_conn(server, status, 0);
-}
+static void on_new_connection(uv_stream_t* server, int status) { accept_conn(server, status, 0); }
 
 static void on_new_tls_connection(uv_stream_t* server, int status) {
   accept_conn(server, status, 1);
@@ -393,7 +401,8 @@ int server_start(uv_loop_t* loop) {
       }
     }
 
-    if (tls_server_ctx_init(&g_tls_ctx, server_config.tls_cert_file, server_config.tls_key_file) != 0) {
+    if (tls_server_ctx_init(&g_tls_ctx, server_config.tls_cert_file, server_config.tls_key_file) !=
+        0) {
       stump_er("failed to initialize TLS server context");
       return -1;
     }

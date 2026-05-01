@@ -3,11 +3,11 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
-#include "xmpp.h"
 #include "test_xmpp_helpers.h"
+#include "xmpp.h"
 
 /* ------------------------------------------------------------------ */
 /*  Helper: feed a stream:stream open and verify the resulting state   */
@@ -133,8 +133,8 @@ static void test_xmpp_state_post_tls_features_show_sasl(void** state) {
   /* Step 3: Client restarts stream (simulating post-TLS). */
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='localhost' version='1.0' "
-                                "xml:lang='en'>";
+                               "xmlns='jabber:client' to='localhost' version='1.0' "
+                               "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
@@ -183,8 +183,8 @@ static void test_xmpp_state_post_sasl_features_show_bind(void** state) {
   /* Step 3: Stream restart after TLS. */
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='localhost' version='1.0' "
-                                "xml:lang='en'>";
+                               "xmlns='jabber:client' to='localhost' version='1.0' "
+                               "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
@@ -198,8 +198,8 @@ static void test_xmpp_state_post_sasl_features_show_bind(void** state) {
   /* Step 5: Stream restart after SASL. */
   g_write_len = 0;
   const char* auth_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='localhost' version='1.0' "
-                                "xml:lang='en'>";
+                             "xmlns='jabber:client' to='localhost' version='1.0' "
+                             "xml:lang='en'>";
   rc = xmpp_feed(&ctx, auth_restart, strlen(auth_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);
@@ -344,8 +344,8 @@ static void test_xmpp_state_out_of_order_in_authenticated_state(void** state) {
   /* Stream restart after TLS. */
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='localhost' version='1.0' "
-                                "xml:lang='en'>";
+                               "xmlns='jabber:client' to='localhost' version='1.0' "
+                               "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
@@ -425,8 +425,8 @@ static void test_xmpp_state_graceful_close_from_bound(void** state) {
 
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='localhost' version='1.0' "
-                                "xml:lang='en'>";
+                               "xmlns='jabber:client' to='localhost' version='1.0' "
+                               "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
@@ -437,8 +437,8 @@ static void test_xmpp_state_graceful_close_from_bound(void** state) {
 
   g_write_len = 0;
   const char* auth_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='localhost' version='1.0' "
-                                "xml:lang='en'>";
+                             "xmlns='jabber:client' to='localhost' version='1.0' "
+                             "xml:lang='en'>";
   rc = xmpp_feed(&ctx, auth_restart, strlen(auth_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);
@@ -488,8 +488,8 @@ static void test_xmpp_state_full_starttls_sasl_bind_flow(void** state) {
   /* Phase 3: TLS_HANDSHAKING -> STREAM_OPENED_TLS (stream restart) */
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='example.com' version='1.0' "
-                                "xml:lang='en'>";
+                               "xmlns='jabber:client' to='example.com' version='1.0' "
+                               "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
@@ -504,8 +504,8 @@ static void test_xmpp_state_full_starttls_sasl_bind_flow(void** state) {
   /* Phase 5: STREAM_OPENED_AUTHENTICATED -> RESOURCE_BOUND (stream restart) */
   g_write_len = 0;
   const char* auth_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                                "xmlns='jabber:client' to='example.com' version='1.0' "
-                                "xml:lang='en'>";
+                             "xmlns='jabber:client' to='example.com' version='1.0' "
+                             "xml:lang='en'>";
   rc = xmpp_feed(&ctx, auth_restart, strlen(auth_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);
@@ -611,7 +611,7 @@ static void test_xmpp_state_multiple_stream_restarts(void** state) {
 
   g_write_len = 0;
   const char* restart1 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                          "xmlns='jabber:client' to='localhost' version='1.0' xml:lang='en'>";
+                         "xmlns='jabber:client' to='localhost' version='1.0' xml:lang='en'>";
   rc = xmpp_feed(&ctx, restart1, strlen(restart1), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
@@ -622,7 +622,7 @@ static void test_xmpp_state_multiple_stream_restarts(void** state) {
 
   g_write_len = 0;
   const char* restart2 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
-                          "xmlns='jabber:client' to='localhost' version='1.0' xml:lang='en'>";
+                         "xmlns='jabber:client' to='localhost' version='1.0' xml:lang='en'>";
   rc = xmpp_feed(&ctx, restart2, strlen(restart2), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);

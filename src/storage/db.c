@@ -241,7 +241,7 @@ void storage_db_bind_int64(storage_stmt_t* stmt, int idx, long long value) {
 
 void storage_db_bind_text(storage_stmt_t* stmt, int idx, const char* value) {
   if (stmt && stmt->stmt && value) {
-    sqlite3_bind_text(stmt->stmt, idx, value, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt->stmt, idx, value, -1, SQLITE_TRANSIENT);
   }
 }
 

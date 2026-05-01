@@ -187,9 +187,7 @@ int tls_server_ctx_init(tls_server_ctx_t* ctx, const char* cert_path, const char
     goto fail;
   }
 
-  ret = mbedtls_ssl_config_defaults(&ctx->conf,
-                                    MBEDTLS_SSL_IS_SERVER,
-                                    MBEDTLS_SSL_TRANSPORT_STREAM,
+  ret = mbedtls_ssl_config_defaults(&ctx->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM,
                                     MBEDTLS_SSL_PRESET_DEFAULT);
   if (ret != 0) {
     stump_er("tls: ssl_config_defaults failed: -0x%04x", -ret);

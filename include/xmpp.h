@@ -35,28 +35,28 @@ typedef void (*ppmxmpp_stream_error_fn)(ppmxmpp_stream_error_t error, void* ud);
 /* Per-connection XMPP session state. */
 typedef struct {
   xmpp_state_t state;
-  char conn_id[33];            /* connection ID for logging (hex, null-terminated) */
-  char domain[1024];           /* extracted from to='' in <stream:stream> — RFC 7622 §3.2:
-                                    max 1023 octets */
-  char authcid[1024];          /* SASL authcid (local-part of JID) — RFC 7622 §3.3: max
-                                    1023 octets */
-  char stream_id[17];          /* unique per-session stream ID — RFC 6120 §4.7.3 */
-  char expected_stanza_ns[256];/* expected namespace for out-of-order validation */
-  char expected_stanza_name[64];/* expected stanza name for out-of-order validation */
-  int needs_parser_reset;      /* reset parser before next feed (after SASL success)
-                               */
-  int needs_starttls_proceed;  /* sent <proceed/>, server must do TLS handshake */
-  void* strophe_ctx;           /* opaque libstrophe xmpp_ctx_t * */
-  void* parser;                /* opaque parser_t * */
-  xmpp_write_fn write_fn;      /* saved write callback */
-  void* write_ud;              /* user data for write callback */
-  int pending_error;           /* set by callbacks to signal fatal error */
+  char conn_id[33];              /* connection ID for logging (hex, null-terminated) */
+  char domain[1024];             /* extracted from to='' in <stream:stream> — RFC 7622 §3.2:
+                                      max 1023 octets */
+  char authcid[1024];            /* SASL authcid (local-part of JID) — RFC 7622 §3.3: max
+                                      1023 octets */
+  char stream_id[17];            /* unique per-session stream ID — RFC 6120 §4.7.3 */
+  char expected_stanza_ns[256];  /* expected namespace for out-of-order validation */
+  char expected_stanza_name[64]; /* expected stanza name for out-of-order validation */
+  int needs_parser_reset;        /* reset parser before next feed (after SASL success)
+                                  */
+  int needs_starttls_proceed;    /* sent <proceed/>, server must do TLS handshake */
+  void* strophe_ctx;             /* opaque libstrophe xmpp_ctx_t * */
+  void* parser;                  /* opaque parser_t * */
+  xmpp_write_fn write_fn;        /* saved write callback */
+  void* write_ud;                /* user data for write callback */
+  int pending_error;             /* set by callbacks to signal fatal error */
   ppmxmpp_stream_error_fn stream_error_fn; /* stream error callback */
-  void* stream_error_ud;       /* user data for stream error callback */
-  char out_buf[XMPP_BUF_SIZE]; /* outgoing response buffer */
+  void* stream_error_ud;                   /* user data for stream error callback */
+  char out_buf[XMPP_BUF_SIZE];             /* outgoing response buffer */
   size_t out_len;
-  char client_ns[256];         /* default namespace from xmlns='' in <stream:stream> */
-  char stream_ns[256];         /* stream namespace from xmlns:stream='' in <stream:stream> */
+  char client_ns[256]; /* default namespace from xmlns='' in <stream:stream> */
+  char stream_ns[256]; /* stream namespace from xmlns:stream='' in <stream:stream> */
 } xmpp_session_t;
 
 /* Feed received bytes into the XMPP state machine.

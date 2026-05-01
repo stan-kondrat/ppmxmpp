@@ -13,9 +13,9 @@ int file_exists(const char* path);
 
 /* Shared server-side TLS context (one per process, shared across connections). */
 typedef struct {
-  mbedtls_ssl_config  conf;
-  mbedtls_x509_crt    cert;
-  mbedtls_pk_context  key;
+  mbedtls_ssl_config conf;
+  mbedtls_x509_crt cert;
+  mbedtls_pk_context key;
 } tls_server_ctx_t;
 
 /* Load cert/key from PEM files and configure server-side TLS defaults.
