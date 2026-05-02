@@ -1,6 +1,6 @@
 # Step 7 — Roster storage and management
 
-**Status: ❌ NOT DONE**
+**Status: ✅ DONE**
 
 ## What
 
@@ -29,6 +29,14 @@ No roster table in SQLite. No `jabber:iq:roster` handler. The schema in `storage
 
 ## Done criteria
 
-- [ ] Client fetches an empty roster on first login without error.
-- [ ] Client adds a contact; server stores it, pushes the update, client shows the contact.
-- [ ] Client removes a contact; server removes it, client reflects the change.
+- [x] Client fetches an empty roster on first login without error.
+- [x] Client adds a contact; server stores it, pushes the update, client shows the contact.
+- [x] Client removes a contact; server removes it, client reflects the change.
+
+## What was built
+
+- `src/storage/db.c` — version 2 migration creates `roster` and `roster_groups` tables with FK cascade delete.
+- `include/storage/roster.h` + `src/storage/roster.c` — CRUD: `storage_roster_list`, `storage_roster_get`, `storage_roster_upsert`, `storage_roster_remove`, `storage_roster_get_groups`.
+- `include/xmpp_iq.h` + `src/xmpp_iq.c` — IQ dispatcher handling `jabber:iq:roster` get and set (add/update/remove via `subscription='remove'`), wired into `xmpp.c` at `XMPP_STATE_CONNECTED`.
+- Roster push: after any set/remove, server sends `<iq type='set'>` roster update to the active resource.
+- `tests/test_xmpp_roster.c` — 8 unit tests covering get (empty, with items), set (add, update, remove, with group), error cases, and roster push.

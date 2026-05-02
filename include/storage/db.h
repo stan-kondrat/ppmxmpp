@@ -4,7 +4,7 @@
 #include <sqlite3.h>
 #include <stddef.h>
 
-#define STORAGE_MAX_VERSION 1
+#define STORAGE_MAX_VERSION 2
 
 /* Prepared statement handle for the cache. */
 typedef struct {

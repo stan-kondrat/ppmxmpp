@@ -27,6 +27,24 @@ static const char* MIGRATIONS[] = {
     "    created_at    INTEGER NOT NULL,\n"
     "    disabled      INTEGER NOT NULL DEFAULT 0\n"
     ")\n",
+
+    /* Version 2: roster tables (RFC 6121 §2) */
+    "CREATE TABLE IF NOT EXISTS roster (\n"
+    "    owner_jid     TEXT NOT NULL,\n"
+    "    contact_jid   TEXT NOT NULL,\n"
+    "    name          TEXT NOT NULL DEFAULT '',\n"
+    "    subscription  TEXT NOT NULL DEFAULT 'none',\n"
+    "    ask           INTEGER NOT NULL DEFAULT 0,\n"
+    "    PRIMARY KEY (owner_jid, contact_jid)\n"
+    ");\n"
+    "CREATE TABLE IF NOT EXISTS roster_groups (\n"
+    "    owner_jid     TEXT NOT NULL,\n"
+    "    contact_jid   TEXT NOT NULL,\n"
+    "    group_name    TEXT NOT NULL,\n"
+    "    PRIMARY KEY (owner_jid, contact_jid, group_name),\n"
+    "    FOREIGN KEY (owner_jid, contact_jid)\n"
+    "        REFERENCES roster(owner_jid, contact_jid) ON DELETE CASCADE\n"
+    ")\n",
 };
 
 static int ensure_directory(const char* path) {

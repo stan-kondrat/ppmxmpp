@@ -1,4 +1,5 @@
 #include "xmpp.h"
+#include "xmpp_iq.h"
 #include "xmpp_sasl.h"
 
 #include <fcntl.h>
@@ -741,6 +742,13 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     ctx->state = XMPP_STATE_CONNECTED;
     break;
   }
+
+  case XMPP_STATE_CONNECTED:
+    /* Post-bind session: dispatch IQ stanzas via the IQ router. */
+    if (strcmp(xmpp_stanza_get_name(stanza), "iq") == 0) {
+      xmpp_iq_dispatch(ctx, stanza);
+    }
+    break;
 
   default:
     break;
