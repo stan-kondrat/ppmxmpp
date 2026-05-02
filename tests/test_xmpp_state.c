@@ -520,7 +520,8 @@ static void test_xmpp_state_full_starttls_sasl_bind_flow(void** state) {
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
   assert_true(buf_contains("<iq type='result'"));
-  assert_true(buf_contains("<jid>testuser@example.com</jid>"));
+  assert_true(buf_contains("<jid>testuser@example.com/"));
+  assert_true(buf_contains("</jid>"));
 
   /* Phase 7: Graceful close */
   g_write_len = 0;
@@ -862,6 +863,198 @@ static void test_xmpp_state_bad_tls_namespace(void** state) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Bind tests helper                                                 */
+/* ------------------------------------------------------------------ */
+
+/* Drive session from CONNECTED all the way to XMPP_STATE_RESOURCE_BOUND.
+ * Requires an active test DB (call setup_test_db first). */
+static int feed_to_resource_bound(xmpp_session_t* ctx) {
+  xmpp_session_reset(ctx);
+  g_write_len = 0;
+
+  if (feed_stream_open(ctx, "example.com") != 0) return -1;
+  if (ctx->state != XMPP_STATE_STREAM_OPENED_PLAINTEXT) return -1;
+
+  g_write_len = 0;
+  const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
+  if (xmpp_feed(ctx, starttls, strlen(starttls), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_TLS_HANDSHAKING) return -1;
+
+  g_write_len = 0;
+  const char* restart1 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                         "xmlns='jabber:client' to='example.com' version='1.0'>";
+  if (xmpp_feed(ctx, restart1, strlen(restart1), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_STREAM_OPENED_TLS) return -1;
+
+  if (feed_sasl_plain(ctx, "", "testuser", "testpass") != 0) return -1;
+  if (ctx->state != XMPP_STATE_STREAM_OPENED_AUTHENTICATED) return -1;
+
+  g_write_len = 0;
+  const char* restart2 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
+                         "xmlns='jabber:client' to='example.com' version='1.0'>";
+  if (xmpp_feed(ctx, restart2, strlen(restart2), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_RESOURCE_BOUND) return -1;
+
+  g_write_len = 0;
+  return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  21. Bind with client-supplied resource                            */
+/* ------------------------------------------------------------------ */
+
+static void test_bind_with_resource(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_resource_bound(&ctx), 0);
+
+  const char* bind_iq = "<iq type='set' id='b1'>"
+                        "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
+                        "<resource>laptop</resource>"
+                        "</bind></iq>";
+  int rc = xmpp_feed(&ctx, bind_iq, strlen(bind_iq), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
+  assert_true(buf_contains("<jid>testuser@example.com/laptop</jid>"));
+  assert_string_equal(ctx.resource, "laptop");
+  assert_string_equal(ctx.bound_jid, "testuser@example.com/laptop");
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  22. Bind without resource — server generates 8-hex resource       */
+/* ------------------------------------------------------------------ */
+
+static void test_bind_without_resource_generates_jid(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_resource_bound(&ctx), 0);
+
+  const char* bind_iq = "<iq type='set' id='b2'>"
+                        "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>"
+                        "</iq>";
+  int rc = xmpp_feed(&ctx, bind_iq, strlen(bind_iq), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
+
+  assert_int_equal((int)strlen(ctx.resource), 8);
+  for (int i = 0; i < 8; i++) {
+    char ch = ctx.resource[i];
+    assert_true((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'));
+  }
+  assert_true(buf_contains("<jid>testuser@example.com/"));
+  assert_true(buf_contains("</jid>"));
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  23. Bind with oversized resource — bad-request, state unchanged   */
+/* ------------------------------------------------------------------ */
+
+static void test_bind_oversized_resource(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_resource_bound(&ctx), 0);
+
+  /* Build a 1024-char resource (one over the 1023-byte limit). */
+  char big[4096];
+  snprintf(big, sizeof(big),
+           "<iq type='set' id='b3'>"
+           "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
+           "<resource>%.*s</resource>"
+           "</bind></iq>",
+           1024, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+  int rc = xmpp_feed(&ctx, big, strlen(big), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);
+  assert_true(buf_contains("<iq type='error' id='b3'>"));
+  assert_true(buf_contains("<bad-request"));
+  assert_int_equal((int)ctx.resource[0], 0);
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  24. Bind with forbidden character in resource — bad-request       */
+/* ------------------------------------------------------------------ */
+
+static void test_bind_forbidden_char_in_resource(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_resource_bound(&ctx), 0);
+
+  const char* bind_iq = "<iq type='set' id='b4'>"
+                        "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
+                        "<resource>bad/resource</resource>"
+                        "</bind></iq>";
+  int rc = xmpp_feed(&ctx, bind_iq, strlen(bind_iq), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);
+  assert_true(buf_contains("<bad-request"));
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  25. Bind with no id attribute — result omits id                   */
+/* ------------------------------------------------------------------ */
+
+static void test_bind_no_id_attribute(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_resource_bound(&ctx), 0);
+
+  const char* bind_iq = "<iq type='set'>"
+                        "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
+                        "<resource>phone</resource>"
+                        "</bind></iq>";
+  int rc = xmpp_feed(&ctx, bind_iq, strlen(bind_iq), mock_write, NULL);
+  assert_int_equal(rc, 0);
+  assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
+  assert_true(buf_contains("<jid>testuser@example.com/phone</jid>"));
+  assert_string_equal(ctx.bound_jid, "testuser@example.com/phone");
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -906,6 +1099,13 @@ int main(void) {
 
       /* TLS namespace validation */
       cmocka_unit_test(test_xmpp_state_bad_tls_namespace),
+
+      /* Resource binding */
+      cmocka_unit_test(test_bind_with_resource),
+      cmocka_unit_test(test_bind_without_resource_generates_jid),
+      cmocka_unit_test(test_bind_oversized_resource),
+      cmocka_unit_test(test_bind_forbidden_char_in_resource),
+      cmocka_unit_test(test_bind_no_id_attribute),
   };
   return cmocka_run_group_tests(tests, NULL, NULL);
 }

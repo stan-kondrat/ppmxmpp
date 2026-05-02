@@ -40,6 +40,9 @@ typedef struct {
                                       max 1023 octets */
   char authcid[1024];            /* SASL authcid (local-part of JID) — RFC 7622 §3.3: max
                                       1023 octets */
+  char resource[1024];           /* resourcepart — RFC 7622 §3.4: max 1023 octets + NUL */
+  char bound_jid[3073];          /* full JID: authcid@domain/resource (3×1023 + 2 separators
+                                      + NUL) */
   char stream_id[17];            /* unique per-session stream ID — RFC 6120 §4.7.3 */
   char expected_stanza_ns[256];  /* expected namespace for out-of-order validation */
   char expected_stanza_name[64]; /* expected stanza name for out-of-order validation */

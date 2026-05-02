@@ -197,7 +197,7 @@ static void test_xmpp_full_connection_flow(void** state) {
   assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
   assert_true(buf_contains("<iq type='result'"));
   assert_true(buf_contains("<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"));
-  assert_true(buf_contains("<jid>testuser@localhost</jid>"));
+  assert_true(buf_contains("<jid>testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
   teardown_test_db();

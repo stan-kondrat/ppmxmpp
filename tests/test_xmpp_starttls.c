@@ -102,7 +102,7 @@ static void test_xmpp_starttls_full_flow(void** state) {
   assert_int_equal(rc, 0);
   assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
   assert_true(buf_contains("<iq type='result'"));
-  assert_true(buf_contains("<jid>testuser@localhost</jid>"));
+  assert_true(buf_contains("<jid>testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
   teardown_test_db();

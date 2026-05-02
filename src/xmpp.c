@@ -112,6 +112,42 @@ static int write_append(xmpp_session_t* ctx, const char* fmt, ...) {
   return 0;
 }
 
+static int _is_forbidden_resource_char(unsigned char ch) {
+  if (ch < 0x20 || ch == 0x7f) return 1;
+  switch (ch) {
+    case '"':
+    case '\'':
+    case '/':
+    case ':':
+    case '<':
+    case '>':
+    case '@':
+      return 1;
+  }
+  return 0;
+}
+
+/* Returns 0 if resource is valid per RFC 7622 §3.4 (stub), -1 otherwise. */
+static int _validate_resource(const char* res) {
+  size_t len = strlen(res);
+  if (len == 0 || len > 1023) return -1;
+  for (size_t i = 0; i < len; i++) {
+    if (_is_forbidden_resource_char((unsigned char)res[i])) return -1;
+  }
+  return 0;
+}
+
+/* Write 8 random hex characters into buf (must be >= 9 bytes). */
+static void _gen_resource(char* buf) {
+  unsigned char rnd[4] = {0};
+  int fd = open("/dev/urandom", O_RDONLY);
+  if (fd >= 0) {
+    (void)read(fd, rnd, sizeof(rnd));
+    close(fd);
+  }
+  snprintf(buf, 9, "%02x%02x%02x%02x", rnd[0], rnd[1], rnd[2], rnd[3]);
+}
+
 /* Send the buffered data and reset the buffer. */
 static int write_flush(xmpp_session_t* ctx, xmpp_write_fn write_fn, void* ud) {
   if (ctx->out_len == 0) {
@@ -632,32 +668,76 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
       return;
     }
 
-    stump_d("stream bind conn_id='%s' iq_id=%s", ctx->conn_id, iq_id ? iq_id : "(none)");
+    xmpp_stanza_t* res_el = xmpp_stanza_get_child_by_name((xmpp_stanza_t*)bind, "resource");
+    const char* res_text = res_el ? xmpp_stanza_get_text_ptr(res_el) : NULL;
+
+    if (res_text && res_text[0] != '\0' && _validate_resource(res_text) != 0) {
+      stump_d("stream bind-invalid-resource conn_id='%s'", ctx->conn_id);
+      int bad_rc;
+      if (iq_id) {
+        bad_rc = write_append(ctx,
+                              "<iq type='error' id='%s'>"
+                              "<error type='modify'>"
+                              "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                              "</error>"
+                              "</iq>",
+                              iq_id);
+      } else {
+        bad_rc = write_append(ctx,
+                              "<iq type='error'>"
+                              "<error type='modify'>"
+                              "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                              "</error>"
+                              "</iq>");
+      }
+      if (bad_rc != 0) {
+        ctx->pending_error = 1;
+        return;
+      }
+      write_flush(ctx, ctx->write_fn, ctx->write_ud);
+      return; /* stay in RESOURCE_BOUND — client may retry */
+    }
+
+    char res_buf[9];
+    const char* resource;
+    if (res_text && res_text[0] != '\0') {
+      resource = res_text;
+    } else {
+      _gen_resource(res_buf);
+      resource = res_buf;
+    }
+
+    snprintf(ctx->resource,  sizeof(ctx->resource),  "%s", resource);
+    snprintf(ctx->bound_jid, sizeof(ctx->bound_jid), "%s@%s/%s",
+             ctx->authcid, ctx->domain, ctx->resource);
+
+    stump_d("stream bind conn_id='%s' iq_id=%s resource=%s", ctx->conn_id,
+            iq_id ? iq_id : "(none)", ctx->resource);
 
     int rc;
     if (iq_id) {
       rc = write_append(ctx,
                         "<iq type='result' id='%s'>"
                         "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
-                        "<jid>%s@%s</jid>"
+                        "<jid>%s</jid>"
                         "</bind>"
                         "</iq>",
-                        iq_id, ctx->authcid, ctx->domain);
+                        iq_id, ctx->bound_jid);
     } else {
       rc = write_append(ctx,
                         "<iq type='result'>"
                         "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
-                        "<jid>%s@%s</jid>"
+                        "<jid>%s</jid>"
                         "</bind>"
                         "</iq>",
-                        ctx->authcid, ctx->domain);
+                        ctx->bound_jid);
     }
     if (rc != 0) {
       ctx->pending_error = 1;
       return;
     }
     write_flush(ctx, ctx->write_fn, ctx->write_ud);
-    stump_d("stream bind-success conn_id='%s' jid=%s@%s", ctx->conn_id, ctx->authcid, ctx->domain);
+    stump_d("stream bind-success conn_id='%s' jid=%s", ctx->conn_id, ctx->bound_jid);
     ctx->state = XMPP_STATE_CONNECTED;
     break;
   }
