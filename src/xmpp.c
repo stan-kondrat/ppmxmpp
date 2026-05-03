@@ -649,11 +649,19 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     free(b64_text);
 
     if (auth_rc != 0) {
-      stump_d("stream sasl-failure conn_id='%s'", ctx->conn_id);
+      ctx->failed_auth_count++;
+      stump_d("stream sasl-failure conn_id='%s' attempt=%d", ctx->conn_id, ctx->failed_auth_count);
       write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
                         "<not-authorized/></failure>");
       write_flush(ctx, ctx->write_fn, ctx->write_ud);
-      ctx->state = XMPP_STATE_CLOSING;
+      if (ctx->failed_auth_count >= 3) {
+        send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
+        ctx->state = XMPP_STATE_CLOSING;
+      } else {
+        /* Allow client to reopen the stream and retry. */
+        ctx->needs_parser_reset = 1;
+        ctx->state = XMPP_STATE_TLS_NEGOTIATED;
+      }
       break;
     }
 

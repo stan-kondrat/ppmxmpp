@@ -71,8 +71,9 @@ typedef struct {
   char stream_id[17];            /* unique per-session stream ID — RFC 6120 §4.7.3 */
   char expected_stanza_ns[256];  /* expected namespace for out-of-order validation */
   char expected_stanza_name[64]; /* expected stanza name for out-of-order validation */
-  int needs_parser_reset;        /* reset parser before next feed (after SASL success) */
+  int needs_parser_reset;        /* reset parser before next feed (after SASL success/failure)*/
   int needs_starttls_proceed;    /* sent <proceed/>, server must do TLS handshake */
+  int failed_auth_count;         /* consecutive SASL failures on this connection */
   void* strophe_ctx;             /* opaque libstrophe xmpp_ctx_t * */
   void* parser;                  /* opaque parser_t * */
   xmpp_write_fn write_fn;        /* saved write callback */
