@@ -23,15 +23,17 @@ static void test_xmpp_starttls_proceed(void** state) {
                              "xml:lang='en'>";
   int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_PLAINTEXT);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED);
   assert_true(buf_contains("<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"));
 
   const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
   g_write_len = 0;
   rc = xmpp_feed(&ctx, starttls, strlen(starttls), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_TLS_HANDSHAKING);
+  assert_int_equal(ctx.state, XMPP_STATE_STARTTLS_SENT);
+  assert_true(ctx.needs_starttls_proceed);
   assert_true(buf_contains("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"));
+  simulate_starttls(&ctx);
 
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
@@ -39,7 +41,7 @@ static void test_xmpp_starttls_proceed(void** state) {
                                "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED_POST_TLS);
   assert_true(buf_contains("<stream:stream"));
   assert_true(buf_contains("<mechanism>PLAIN</mechanism>"));
   assert_true(buf_contains("<stream:features>"));
@@ -63,14 +65,16 @@ static void test_xmpp_starttls_full_flow(void** state) {
                              "xml:lang='en'>";
   int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_PLAINTEXT);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED);
 
   const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
   g_write_len = 0;
   rc = xmpp_feed(&ctx, starttls, strlen(starttls), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_TLS_HANDSHAKING);
+  assert_int_equal(ctx.state, XMPP_STATE_STARTTLS_SENT);
+  assert_true(ctx.needs_starttls_proceed);
   assert_true(buf_contains("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"));
+  simulate_starttls(&ctx);
 
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
@@ -78,11 +82,11 @@ static void test_xmpp_starttls_full_flow(void** state) {
                                "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED_POST_TLS);
 
   rc = feed_sasl_plain(&ctx, "", "testuser", "testpass");
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_AUTHENTICATED);
+  assert_int_equal(ctx.state, XMPP_STATE_SASL_SUCCESS);
   assert_true(buf_contains("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"));
 
   g_write_len = 0;
@@ -91,7 +95,7 @@ static void test_xmpp_starttls_full_flow(void** state) {
                              "xml:lang='en'>";
   rc = xmpp_feed(&ctx, auth_restart, strlen(auth_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_RESOURCE_BOUND);
+  assert_int_equal(ctx.state, XMPP_STATE_BOUND);
   assert_true(buf_contains("<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"));
   assert_true(buf_contains("<required/></bind>"));
 
@@ -100,7 +104,7 @@ static void test_xmpp_starttls_full_flow(void** state) {
                         "</iq>";
   rc = xmpp_feed(&ctx, bind_iq, strlen(bind_iq), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_CONNECTED);
+  assert_int_equal(ctx.state, XMPP_STATE_ONLINE);
   assert_true(buf_contains("<iq type='result'"));
   assert_true(buf_contains("<jid>testuser@localhost/"));
 
@@ -120,7 +124,7 @@ static void test_xmpp_starttls_bad_namespace(void** state) {
                              "xml:lang='en'>";
   int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_PLAINTEXT);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED);
 
   const char* starttls_bad = "<starttls xmlns='wrong:namespace'/>";
   g_write_len = 0;
@@ -148,14 +152,16 @@ static void test_xmpp_starttls_parser_reset(void** state) {
                              "xml:lang='en'>";
   int rc = xmpp_feed(&ctx, client_hello, strlen(client_hello), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_PLAINTEXT);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED);
 
   const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
   g_write_len = 0;
   rc = xmpp_feed(&ctx, starttls, strlen(starttls), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_TLS_HANDSHAKING);
+  assert_int_equal(ctx.state, XMPP_STATE_STARTTLS_SENT);
+  assert_true(ctx.needs_starttls_proceed);
   assert_true(buf_contains("<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>"));
+  simulate_starttls(&ctx);
 
   g_write_len = 0;
   const char* client_restart = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' "
@@ -163,11 +169,11 @@ static void test_xmpp_starttls_parser_reset(void** state) {
                                "xml:lang='en'>";
   rc = xmpp_feed(&ctx, client_restart, strlen(client_restart), mock_write, NULL);
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_TLS);
+  assert_int_equal(ctx.state, XMPP_STATE_FEATURES_RECEIVED_POST_TLS);
 
   rc = feed_sasl_plain(&ctx, "", "testuser", "testpass");
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_STREAM_OPENED_AUTHENTICATED);
+  assert_int_equal(ctx.state, XMPP_STATE_SASL_SUCCESS);
   assert_true(buf_contains("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>"));
 
   xmpp_session_cleanup(&ctx);

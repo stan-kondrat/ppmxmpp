@@ -114,16 +114,18 @@ static int write_append(xmpp_session_t* ctx, const char* fmt, ...) {
 }
 
 static int _is_forbidden_resource_char(unsigned char ch) {
-  if (ch < 0x20 || ch == 0x7f) return 1;
+  if (ch < 0x20 || ch == 0x7f) {
+    return 1;
+  }
   switch (ch) {
-    case '"':
-    case '\'':
-    case '/':
-    case ':':
-    case '<':
-    case '>':
-    case '@':
-      return 1;
+  case '"':
+  case '\'':
+  case '/':
+  case ':':
+  case '<':
+  case '>':
+  case '@':
+    return 1;
   }
   return 0;
 }
@@ -131,9 +133,13 @@ static int _is_forbidden_resource_char(unsigned char ch) {
 /* Returns 0 if resource is valid per RFC 7622 §3.4 (stub), -1 otherwise. */
 static int _validate_resource(const char* res) {
   size_t len = strlen(res);
-  if (len == 0 || len > 1023) return -1;
+  if (len == 0 || len > 1023) {
+    return -1;
+  }
   for (size_t i = 0; i < len; i++) {
-    if (_is_forbidden_resource_char((unsigned char)res[i])) return -1;
+    if (_is_forbidden_resource_char((unsigned char)res[i])) {
+      return -1;
+    }
   }
   return 0;
 }
@@ -201,22 +207,62 @@ static void send_stream_error(xmpp_session_t* ctx, ppmxmpp_stream_error_t error,
 /*  State transition helpers                                           */
 /* ------------------------------------------------------------------ */
 
+typedef enum {
+  XMPP_EVENT_STREAM_OPEN,
+  XMPP_EVENT_AUTH,
+  XMPP_EVENT_SASL_SUCCESS,
+  XMPP_EVENT_CLOSE,
+  XMPP_EVENT_TCP_CLOSE,
+} xmpp_event_t;
+
+static const char* _event_name(xmpp_event_t event) {
+  switch (event) {
+  case XMPP_EVENT_STREAM_OPEN:
+    return "stream_open";
+  case XMPP_EVENT_AUTH:
+    return "auth";
+  case XMPP_EVENT_SASL_SUCCESS:
+    return "sasl_success";
+  case XMPP_EVENT_CLOSE:
+    return "close";
+  case XMPP_EVENT_TCP_CLOSE:
+    return "tcp_close";
+  }
+  return "unknown";
+}
+
 static const char* _state_name(xmpp_state_t state) {
   switch (state) {
-  case XMPP_STATE_CONNECTED:
-    return "CONNECTED";
-  case XMPP_STATE_STREAM_OPENED_PLAINTEXT:
-    return "STREAM_OPENED_PLAINTEXT";
-  case XMPP_STATE_TLS_HANDSHAKING:
-    return "TLS_HANDSHAKING";
-  case XMPP_STATE_STREAM_OPENED_TLS:
-    return "STREAM_OPENED_TLS";
-  case XMPP_STATE_SASL_AUTHENTICATING:
-    return "SASL_AUTHENTICATING";
-  case XMPP_STATE_STREAM_OPENED_AUTHENTICATED:
-    return "STREAM_OPENED_AUTHENTICATED";
-  case XMPP_STATE_RESOURCE_BOUND:
-    return "RESOURCE_BOUND";
+  case XMPP_STATE_DISCONNECTED:
+    return "DISCONNECTED";
+  case XMPP_STATE_CONNECTED_TCP:
+    return "CONNECTED_TCP";
+  case XMPP_STATE_STREAM_OPENED:
+    return "STREAM_OPENED";
+  case XMPP_STATE_FEATURES_RECEIVED:
+    return "FEATURES_RECEIVED";
+  case XMPP_STATE_STARTTLS_SENT:
+    return "STARTTLS_SENT";
+  case XMPP_STATE_TLS_NEGOTIATED:
+    return "TLS_NEGOTIATED";
+  case XMPP_STATE_STREAM_RESTARTED_POST_TLS:
+    return "STREAM_RESTARTED_POST_TLS";
+  case XMPP_STATE_FEATURES_RECEIVED_POST_TLS:
+    return "FEATURES_RECEIVED_POST_TLS";
+  case XMPP_STATE_SASL_NEGOTIATING:
+    return "SASL_NEGOTIATING";
+  case XMPP_STATE_SASL_SUCCESS:
+    return "SASL_SUCCESS";
+  case XMPP_STATE_STREAM_RESTARTED_POST_SASL:
+    return "STREAM_RESTARTED_POST_SASL";
+  case XMPP_STATE_FEATURES_RECEIVED_POST_SASL:
+    return "FEATURES_RECEIVED_POST_SASL";
+  case XMPP_STATE_RESOURCE_BINDING:
+    return "RESOURCE_BINDING";
+  case XMPP_STATE_BOUND:
+    return "BOUND";
+  case XMPP_STATE_ONLINE:
+    return "ONLINE";
   case XMPP_STATE_CLOSING:
     return "CLOSING";
   case XMPP_STATE_CLOSED:
@@ -227,84 +273,60 @@ static const char* _state_name(xmpp_state_t state) {
 
 /* Transition validation table: (from_state, event) → to_state.
  * Returns the target state, or XMPP_STATE_CLOSED for invalid transitions. */
-static xmpp_state_t _validate_transition(xmpp_state_t from_state, const char* event) {
-  if (!event) {
-    return XMPP_STATE_CLOSED;
-  }
-
-  if (strcmp(event, "stream_open") == 0) {
-    if (from_state == XMPP_STATE_CONNECTED) {
-      return XMPP_STATE_STREAM_OPENED_PLAINTEXT;
+static xmpp_state_t _validate_transition(xmpp_state_t from, xmpp_event_t event) {
+  switch (event) {
+  case XMPP_EVENT_STREAM_OPEN:
+    if (from == XMPP_STATE_CONNECTED_TCP) {
+      return XMPP_STATE_STREAM_OPENED;
     }
-    if (from_state == XMPP_STATE_TLS_HANDSHAKING) {
-      return XMPP_STATE_STREAM_OPENED_TLS;
+    if (from == XMPP_STATE_TLS_NEGOTIATED || from == XMPP_STATE_STARTTLS_SENT) {
+      return XMPP_STATE_STREAM_RESTARTED_POST_TLS;
     }
-    if (from_state == XMPP_STATE_STREAM_OPENED_AUTHENTICATED) {
-      return XMPP_STATE_RESOURCE_BOUND;
+    if (from == XMPP_STATE_SASL_SUCCESS) {
+      return XMPP_STATE_STREAM_RESTARTED_POST_SASL;
     }
-  }
-  if (strcmp(event, "starttls") == 0) {
-    if (from_state == XMPP_STATE_STREAM_OPENED_PLAINTEXT) {
-      return XMPP_STATE_TLS_HANDSHAKING;
+    break;
+  case XMPP_EVENT_AUTH:
+    if (from == XMPP_STATE_FEATURES_RECEIVED_POST_TLS) {
+      return XMPP_STATE_SASL_NEGOTIATING;
     }
-  }
-  if (strcmp(event, "tls_complete") == 0) {
-    if (from_state == XMPP_STATE_TLS_HANDSHAKING) {
-      return XMPP_STATE_STREAM_OPENED_TLS;
+    break;
+  case XMPP_EVENT_SASL_SUCCESS:
+    if (from == XMPP_STATE_SASL_NEGOTIATING) {
+      return XMPP_STATE_SASL_SUCCESS;
     }
-  }
-  if (strcmp(event, "auth") == 0) {
-    if (from_state == XMPP_STATE_STREAM_OPENED_TLS) {
-      return XMPP_STATE_SASL_AUTHENTICATING;
-    }
-    if (from_state == XMPP_STATE_STREAM_OPENED_PLAINTEXT) {
-      return XMPP_STATE_SASL_AUTHENTICATING;
-    }
-  }
-  if (strcmp(event, "sasl_success") == 0) {
-    if (from_state == XMPP_STATE_SASL_AUTHENTICATING) {
-      return XMPP_STATE_STREAM_OPENED_AUTHENTICATED;
-    }
-  }
-  if (strcmp(event, "stream_open") == 0) {
-    if (from_state == XMPP_STATE_STREAM_OPENED_AUTHENTICATED) {
-      return XMPP_STATE_RESOURCE_BOUND;
-    }
-  }
-  if (strcmp(event, "close") == 0) {
-    if (from_state == XMPP_STATE_RESOURCE_BOUND || from_state == XMPP_STATE_CLOSING) {
+    break;
+  case XMPP_EVENT_CLOSE:
+    if (from == XMPP_STATE_ONLINE || from == XMPP_STATE_CLOSING) {
       return XMPP_STATE_CLOSING;
     }
-  }
-  if (strcmp(event, "tcp_close") == 0) {
-    if (from_state == XMPP_STATE_CLOSING) {
+    break;
+  case XMPP_EVENT_TCP_CLOSE:
+    if (from == XMPP_STATE_CLOSING) {
       return XMPP_STATE_CLOSED;
     }
+    break;
   }
-
-  /* Invalid transition */
   return XMPP_STATE_CLOSED;
 }
 
-/* Transition to a new state. Returns 0 on success, -1 on error. */
-static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, const char* event) {
+/* Transition to a new state, send stream:features, then advance to the
+ * stable FEATURES_RECEIVED_* / BOUND state.  Returns 0 on success, -1 on error. */
+static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, xmpp_event_t event) {
   xmpp_state_t from_state = ctx->state;
 
-  /* Validate transition */
   xmpp_state_t allowed = _validate_transition(from_state, event);
   if (allowed == XMPP_STATE_CLOSED && new_state != XMPP_STATE_CLOSED) {
+    stump_w("stream invalid-transition conn_id='%s' from=%s event=%s", ctx->conn_id,
+            _state_name(from_state), _event_name(event));
     send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
     ctx->state = XMPP_STATE_CLOSING;
     ctx->pending_error = 1;
     return -1;
   }
 
-  stump_d("stream transition conn_id='%s' from=%s to=%s event=%s", ctx->conn_id,
-          _state_name(from_state), _state_name(new_state), event);
-
   ctx->state = new_state;
 
-  /* Send stream:features for the new state. */
   if (_send_stream_features(ctx) != 0) {
     ctx->pending_error = 1;
     return -1;
@@ -313,6 +335,19 @@ static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, const cha
     ctx->pending_error = 1;
     return -1;
   }
+
+  /* Advance past the transient STREAM_RESTARTED_* states to the stable
+   * FEATURES_RECEIVED_* / BOUND states where stanza handlers wait. */
+  if (new_state == XMPP_STATE_STREAM_OPENED) {
+    ctx->state = XMPP_STATE_FEATURES_RECEIVED;
+  } else if (new_state == XMPP_STATE_STREAM_RESTARTED_POST_TLS) {
+    ctx->state = XMPP_STATE_FEATURES_RECEIVED_POST_TLS;
+  } else if (new_state == XMPP_STATE_STREAM_RESTARTED_POST_SASL) {
+    ctx->state = XMPP_STATE_BOUND;
+  }
+
+  stump_d("stream transition conn_id='%s' from=%s event=%s to=%s", ctx->conn_id,
+          _state_name(from_state), _event_name(event), _state_name(ctx->state));
 
   return 0;
 }
@@ -323,8 +358,8 @@ static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, const cha
 
 static int _send_stream_features(xmpp_session_t* ctx) {
   switch (ctx->state) {
-  case XMPP_STATE_STREAM_OPENED_PLAINTEXT:
-    /* RFC 6120 §5: STARTTLS required in plaintext. */
+  case XMPP_STATE_STREAM_OPENED:
+    /* RFC 6120 §5: offer STARTTLS before any auth. */
     if (write_append(ctx, "<stream:features>"
                           "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"
                           "<required/>"
@@ -334,8 +369,8 @@ static int _send_stream_features(xmpp_session_t* ctx) {
     }
     break;
 
-  case XMPP_STATE_STREAM_OPENED_TLS:
-    /* RFC 6120 §5: SASL mechanisms after TLS. */
+  case XMPP_STATE_STREAM_RESTARTED_POST_TLS:
+    /* TLS active — offer SASL mechanisms. */
     if (write_append(ctx, "<stream:features>"
                           "<mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
                           "<mechanism>PLAIN</mechanism>"
@@ -345,8 +380,8 @@ static int _send_stream_features(xmpp_session_t* ctx) {
     }
     break;
 
-  case XMPP_STATE_RESOURCE_BOUND:
-    /* RFC 6120 §7: bind required after authentication and stream restart. */
+  case XMPP_STATE_STREAM_RESTARTED_POST_SASL:
+    /* RFC 6120 §7: offer resource bind after SASL success and stream restart. */
     if (write_append(ctx, "<stream:features>"
                           "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
                           "<required/></bind>"
@@ -483,16 +518,18 @@ static void on_stream_start(char* name, char** attrs, void* ud) {
   /* Transition based on current state. */
   int rc = -1;
   switch (ctx->state) {
-  case XMPP_STATE_CONNECTED:
-    rc = _transition_to(ctx, XMPP_STATE_STREAM_OPENED_PLAINTEXT, "stream_open");
+  case XMPP_STATE_CONNECTED_TCP:
+    rc = _transition_to(ctx, XMPP_STATE_STREAM_OPENED, XMPP_EVENT_STREAM_OPEN);
     break;
-  case XMPP_STATE_TLS_HANDSHAKING:
-    rc = _transition_to(ctx, XMPP_STATE_STREAM_OPENED_TLS, "stream_open");
+  case XMPP_STATE_TLS_NEGOTIATED:
+  case XMPP_STATE_STARTTLS_SENT:
+    rc = _transition_to(ctx, XMPP_STATE_STREAM_RESTARTED_POST_TLS, XMPP_EVENT_STREAM_OPEN);
     break;
-  case XMPP_STATE_STREAM_OPENED_AUTHENTICATED:
-    rc = _transition_to(ctx, XMPP_STATE_RESOURCE_BOUND, "stream_open");
+  case XMPP_STATE_SASL_SUCCESS:
+    rc = _transition_to(ctx, XMPP_STATE_STREAM_RESTARTED_POST_SASL, XMPP_EVENT_STREAM_OPEN);
     break;
   default:
+    stump_w("stream unexpected-open conn_id='%s' state=%s", ctx->conn_id, _state_name(ctx->state));
     ctx->pending_error = 1;
     break;
   }
@@ -505,148 +542,130 @@ static void on_stream_end(char* name, void* ud) {
   (void)name;
   xmpp_session_t* ctx = (xmpp_session_t*)ud;
 
+  stump_d("stream end conn_id='%s' state=%s", ctx->conn_id, _state_name(ctx->state));
+
   /* RFC 6120 §4.4.4: on receiving </stream:stream>, send </stream:stream> in response. */
   if (ctx->state != XMPP_STATE_CLOSING && ctx->state != XMPP_STATE_CLOSED) {
     _send_stream_close(ctx);
+    ctx->state = XMPP_STATE_CLOSING;
   }
-  ctx->state = XMPP_STATE_CLOSING;
 }
 
 static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
   xmpp_session_t* ctx = (xmpp_session_t*)ud;
 
+  stump_d("stream stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id, _state_name(ctx->state),
+          xmpp_stanza_get_name(stanza));
+
   switch (ctx->state) {
-  case XMPP_STATE_STREAM_OPENED_PLAINTEXT: {
-    /* RFC 6120 §5: only <starttls/> expected in plaintext.
-     * Out-of-order stanzas (e.g. bind before STARTTLS) produce stream error. */
-    if (strcmp(xmpp_stanza_get_name(stanza), "starttls") == 0) {
-      const char* ns = xmpp_stanza_get_ns(stanza);
-      if (!ns || strcmp(ns, "urn:ietf:params:xml:ns:xmpp-tls") != 0) {
-        stump_d("stream starttls-invalid-ns conn_id='%s'", ctx->conn_id);
-        write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"
-                          "<invalid-namespace/></failure>");
-        write_flush(ctx, ctx->write_fn, ctx->write_ud);
+  case XMPP_STATE_FEATURES_RECEIVED: {
+    /* RFC 6120 §5: only <starttls/> expected before TLS is active.
+     * <auth> before TLS = unsupported mechanism (RFC 6120 §6.3.6). */
+    if (strcmp(xmpp_stanza_get_name(stanza), "auth") == 0) {
+      const char* mech_pre = xmpp_stanza_get_attribute(stanza, "mechanism");
+      if (mech_pre && strcmp(mech_pre, "PLAIN") == 0) {
+        /* RFC 6120 §6.3.6 + §5.1: sending PLAIN credentials before TLS is a
+         * policy-violation stream error — close with CLOSING (client must ack). */
+        stump_d("stream sasl-plain-before-tls conn_id='%s'", ctx->conn_id);
+        send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
         ctx->state = XMPP_STATE_CLOSING;
         ctx->pending_error = 1;
-        return;
-      }
-      stump_d("stream starttls conn_id='%s'", ctx->conn_id);
-      write_append(ctx, "<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>");
-      write_flush(ctx, ctx->write_fn, ctx->write_ud);
-      ctx->needs_starttls_proceed = 1;
-      ctx->state = XMPP_STATE_TLS_HANDSHAKING;
-      break;
-    }
-
-    /* Out-of-order: auth or bind before STARTTLS — policy violation. */
-    if (strcmp(xmpp_stanza_get_name(stanza), "auth") == 0) {
-      const char* mech = xmpp_stanza_get_attribute(stanza, "mechanism");
-      if (!mech || strcmp(mech, "PLAIN") != 0) {
-        stump_d("stream sasl-unsupported-mech conn_id='%s' mech=%s", ctx->conn_id,
-                mech ? mech : "(none)");
+      } else {
+        /* Other mechanisms before TLS: SASL <failure> + </stream:stream> → CLOSED. */
+        stump_d("stream sasl-before-tls conn_id='%s'", ctx->conn_id);
         write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
                           "<unsupported-mechanism/></failure>");
+        write_append(ctx, "</stream:stream>");
         write_flush(ctx, ctx->write_fn, ctx->write_ud);
         ctx->state = XMPP_STATE_CLOSED;
         ctx->pending_error = 1;
-        return;
       }
-
-      stump_d("stream sasl-auth conn_id='%s' mech=%s", ctx->conn_id, mech);
-
-      char* b64_text = xmpp_stanza_get_text(stanza);
-      if (!b64_text) {
-        ctx->pending_error = 1;
-        return;
-      }
-
-      int auth_rc = handle_sasl_plain(ctx, b64_text, ctx->write_fn, ctx->write_ud);
-      free(b64_text);
-
-      if (auth_rc != 0) {
-        stump_d("stream sasl-failure conn_id='%s'", ctx->conn_id);
-        write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
-                          "<not-authorized/></failure>");
-        write_flush(ctx, ctx->write_fn, ctx->write_ud);
-        ctx->state = XMPP_STATE_CLOSING;
-        return;
-      }
-
-      stump_d("stream sasl-success conn_id='%s'", ctx->conn_id);
-      write_append(ctx, "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
-      write_flush(ctx, ctx->write_fn, ctx->write_ud);
-      ctx->needs_parser_reset = 1;
-      ctx->state = XMPP_STATE_STREAM_OPENED_AUTHENTICATED;
       break;
     }
-    stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-            _state_name(ctx->state), xmpp_stanza_get_name(stanza));
-    send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
-    ctx->state = XMPP_STATE_CLOSING;
-    ctx->pending_error = 1;
+    if (strcmp(xmpp_stanza_get_name(stanza), "starttls") != 0) {
+      stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
+              _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+      send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
+      ctx->state = XMPP_STATE_CLOSING;
+      ctx->pending_error = 1;
+      break;
+    }
+    const char* tls_ns = xmpp_stanza_get_ns(stanza);
+    if (!tls_ns || strcmp(tls_ns, "urn:ietf:params:xml:ns:xmpp-tls") != 0) {
+      /* RFC 6120 §5.4.2.2: TLS failure — send <failure> + </stream:stream> and go to
+       * CLOSING (client must acknowledge the closing stream tag). */
+      stump_d("stream starttls-invalid-ns conn_id='%s'", ctx->conn_id);
+      write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-tls'>"
+                        "<invalid-namespace/></failure>");
+      write_append(ctx, "</stream:stream>");
+      write_flush(ctx, ctx->write_fn, ctx->write_ud);
+      ctx->state = XMPP_STATE_CLOSING;
+      ctx->pending_error = 1;
+      break;
+    }
+    stump_d("stream starttls conn_id='%s'", ctx->conn_id);
+    write_append(ctx, "<proceed xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>");
+    write_flush(ctx, ctx->write_fn, ctx->write_ud);
+    ctx->needs_starttls_proceed = 1;
+    ctx->state = XMPP_STATE_STARTTLS_SENT;
     break;
   }
 
-  case XMPP_STATE_STREAM_OPENED_TLS: {
-    /* RFC 6120 §6: only <auth mechanism='PLAIN'> expected post-TLS. */
-    if (strcmp(xmpp_stanza_get_name(stanza), "auth") == 0) {
-      const char* mech = xmpp_stanza_get_attribute(stanza, "mechanism");
-      if (!mech || strcmp(mech, "PLAIN") != 0) {
-        stump_d("stream sasl-unsupported-mech conn_id='%s' mech=%s", ctx->conn_id,
-                mech ? mech : "(none)");
-        write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
-                          "<unsupported-mechanism/></failure>");
-        write_flush(ctx, ctx->write_fn, ctx->write_ud);
-        ctx->state = XMPP_STATE_CLOSING;
-        ctx->pending_error = 1;
-        return;
-      }
-
-      stump_d("stream sasl-auth conn_id='%s' mech=%s", ctx->conn_id, mech);
-
-      char* b64_text = xmpp_stanza_get_text(stanza);
-      if (!b64_text) {
-        ctx->pending_error = 1;
-        return;
-      }
-
-      int auth_rc = handle_sasl_plain(ctx, b64_text, ctx->write_fn, ctx->write_ud);
-      free(b64_text);
-
-      if (auth_rc != 0) {
-        stump_d("stream sasl-failure conn_id='%s'", ctx->conn_id);
-        write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
-                          "<not-authorized/></failure>");
-        write_flush(ctx, ctx->write_fn, ctx->write_ud);
-        ctx->state = XMPP_STATE_CLOSING;
-        return;
-      }
-
-      stump_d("stream sasl-success conn_id='%s'", ctx->conn_id);
-      write_append(ctx, "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
-      write_flush(ctx, ctx->write_fn, ctx->write_ud);
-      ctx->needs_parser_reset = 1;
-      ctx->state = XMPP_STATE_STREAM_OPENED_AUTHENTICATED;
+  case XMPP_STATE_FEATURES_RECEIVED_POST_TLS: {
+    /* TLS active — only <auth/> expected. */
+    if (strcmp(xmpp_stanza_get_name(stanza), "auth") != 0) {
+      stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
+              _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+      send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
+      ctx->state = XMPP_STATE_CLOSING;
+      ctx->pending_error = 1;
       break;
     }
 
-    /* Out-of-order stanza in TLS state — stream error. */
-    stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-            _state_name(ctx->state), xmpp_stanza_get_name(stanza));
-    send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
-    ctx->state = XMPP_STATE_CLOSING;
-    ctx->pending_error = 1;
+    const char* mech = xmpp_stanza_get_attribute(stanza, "mechanism");
+    if (!mech || strcmp(mech, "PLAIN") != 0) {
+      /* RFC 6120 §6.3.6: SASL failure is terminal — send <failure> + </stream:stream>. */
+      stump_d("stream sasl-unsupported-mech conn_id='%s' mech=%s", ctx->conn_id,
+              mech ? mech : "(none)");
+      write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
+                        "<unsupported-mechanism/></failure>");
+      write_append(ctx, "</stream:stream>");
+      write_flush(ctx, ctx->write_fn, ctx->write_ud);
+      ctx->state = XMPP_STATE_CLOSED;
+      ctx->pending_error = 1;
+      break;
+    }
+
+    stump_d("stream sasl-auth conn_id='%s' mech=%s", ctx->conn_id, mech);
+
+    char* b64_text = xmpp_stanza_get_text(stanza);
+    if (!b64_text) {
+      stump_w("stream sasl-empty-credentials conn_id='%s'", ctx->conn_id);
+      ctx->pending_error = 1;
+      break;
+    }
+
+    int auth_rc = handle_sasl_plain(ctx, b64_text, ctx->write_fn, ctx->write_ud);
+    free(b64_text);
+
+    if (auth_rc != 0) {
+      stump_d("stream sasl-failure conn_id='%s'", ctx->conn_id);
+      write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
+                        "<not-authorized/></failure>");
+      write_flush(ctx, ctx->write_fn, ctx->write_ud);
+      ctx->state = XMPP_STATE_CLOSING;
+      break;
+    }
+
+    stump_d("stream sasl-success conn_id='%s'", ctx->conn_id);
+    write_append(ctx, "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
+    write_flush(ctx, ctx->write_fn, ctx->write_ud);
+    ctx->needs_parser_reset = 1;
+    ctx->state = XMPP_STATE_SASL_SUCCESS;
     break;
   }
 
-  case XMPP_STATE_STREAM_OPENED_AUTHENTICATED:
-    /* No stanzas expected here — only a stream restart (handled in on_stream_start). */
-    send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
-    ctx->state = XMPP_STATE_CLOSING;
-    ctx->pending_error = 1;
-    break;
-
-  case XMPP_STATE_RESOURCE_BOUND: {
+  case XMPP_STATE_BOUND: {
     /* RFC 6120 §7: expect bind IQ after stream restart post-SASL. */
     const char* iq_type = xmpp_stanza_get_attribute(stanza, "type");
     if (!iq_type || strcmp(iq_type, "set") != 0) {
@@ -670,10 +689,12 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     }
 
     xmpp_stanza_t* res_el = xmpp_stanza_get_child_by_name((xmpp_stanza_t*)bind, "resource");
-    const char* res_text = res_el ? xmpp_stanza_get_text_ptr(res_el) : NULL;
+    /* xmpp_stanza_get_text allocates — must free; get_text_ptr only works on text nodes. */
+    char* res_text = res_el ? xmpp_stanza_get_text(res_el) : NULL;
 
     if (res_text && res_text[0] != '\0' && _validate_resource(res_text) != 0) {
       stump_d("stream bind-invalid-resource conn_id='%s'", ctx->conn_id);
+      free(res_text);
       int bad_rc;
       if (iq_id) {
         bad_rc = write_append(ctx,
@@ -684,19 +705,18 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
                               "</iq>",
                               iq_id);
       } else {
-        bad_rc = write_append(ctx,
-                              "<iq type='error'>"
-                              "<error type='modify'>"
-                              "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                              "</error>"
-                              "</iq>");
+        bad_rc = write_append(ctx, "<iq type='error'>"
+                                   "<error type='modify'>"
+                                   "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                                   "</error>"
+                                   "</iq>");
       }
       if (bad_rc != 0) {
         ctx->pending_error = 1;
         return;
       }
       write_flush(ctx, ctx->write_fn, ctx->write_ud);
-      return; /* stay in RESOURCE_BOUND — client may retry */
+      return; /* stay in BOUND — client may retry with valid resource */
     }
 
     char res_buf[9];
@@ -704,16 +724,19 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     if (res_text && res_text[0] != '\0') {
       resource = res_text;
     } else {
+      free(res_text);
+      res_text = NULL;
       _gen_resource(res_buf);
       resource = res_buf;
     }
 
-    snprintf(ctx->resource,  sizeof(ctx->resource),  "%s", resource);
-    snprintf(ctx->bound_jid, sizeof(ctx->bound_jid), "%s@%s/%s",
-             ctx->authcid, ctx->domain, ctx->resource);
+    snprintf(ctx->resource, sizeof(ctx->resource), "%s", resource);
+    free(res_text);
+    snprintf(ctx->bound_jid, sizeof(ctx->bound_jid), "%s@%s/%s", ctx->authcid, ctx->domain,
+             ctx->resource);
 
-    stump_d("stream bind conn_id='%s' iq_id=%s resource=%s", ctx->conn_id,
-            iq_id ? iq_id : "(none)", ctx->resource);
+    stump_d("stream bind conn_id='%s' iq_id=%s resource=%s", ctx->conn_id, iq_id ? iq_id : "(none)",
+            ctx->resource);
 
     int rc;
     if (iq_id) {
@@ -739,11 +762,11 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     }
     write_flush(ctx, ctx->write_fn, ctx->write_ud);
     stump_d("stream bind-success conn_id='%s' jid=%s", ctx->conn_id, ctx->bound_jid);
-    ctx->state = XMPP_STATE_CONNECTED;
+    ctx->state = XMPP_STATE_ONLINE;
     break;
   }
 
-  case XMPP_STATE_CONNECTED:
+  case XMPP_STATE_ONLINE:
     /* Post-bind session: dispatch IQ stanzas via the IQ router. */
     if (strcmp(xmpp_stanza_get_name(stanza), "iq") == 0) {
       xmpp_iq_dispatch(ctx, stanza);
@@ -751,6 +774,8 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     break;
 
   default:
+    stump_w("stream unexpected-stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id,
+            _state_name(ctx->state), xmpp_stanza_get_name(stanza));
     break;
   }
 }
@@ -786,7 +811,7 @@ void xmpp_session_cleanup(xmpp_session_t* ctx) {
 void xmpp_session_reset(xmpp_session_t* ctx) {
   xmpp_session_cleanup(ctx);
   memset(ctx, 0, sizeof(*ctx));
-  ctx->state = XMPP_STATE_CONNECTED;
+  ctx->state = XMPP_STATE_CONNECTED_TCP;
 
   /* RFC 6120 §4.7.3: stream ID MUST be unique and unpredictable. */
   {

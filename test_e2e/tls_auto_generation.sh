@@ -59,10 +59,8 @@ log "Starting ppmxmpp — no cert/key files present..."
 cat > "$TEST_CONFIG" <<EOF
 log_level = "DEBUG";
 db_path = "$TEST_DB";
-bind_enabled = false;
-tls_enabled = true;
-tls_host = "127.0.0.1";
-tls_port = $TLS_PORT;
+bind_host = "127.0.0.1";
+bind_port = $TLS_PORT;
 tls_cert_file = "$CERT_FILE";
 tls_key_file = "$KEY_FILE";
 EOF

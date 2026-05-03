@@ -2,11 +2,13 @@
 
 ## Features
 
-- STARTTLS negotiation (RFC 6120 §5) — required before authentication
-- SASL PLAIN authentication (RFC 4616 + RFC 7622)
-- Resource bind (RFC 6120 §7)
-- Stream error handling (RFC 6120 §4.9) with graceful stream close
-- State-machine-enforced protocol ordering: CONNECTED → STREAM_OPENED_PLAINTEXT → TLS_HANDSHAKING → STREAM_OPENED_TLS → STREAM_OPENED_AUTHENTICATED → RESOURCE_BOUND → CONNECTED
+### Core XMPP (RFC 6120)
+
+- **STARTTLS** (RFC 6120 §5) — upgrades a plaintext connection to TLS before any authentication is attempted.
+- **SASL PLAIN** (RFC 4616 + RFC 7622) — username/password authentication over the encrypted stream.
+- **Resource bind** (RFC 6120 §7) — assigns a full JID (`user@domain/resource`) to each session.
+- **Stream error handling** (RFC 6120 §4.9) — sends a structured `<stream:error>` element and closes the stream gracefully on protocol violations.
+- **State-machine protocol ordering** — enforces the correct negotiation sequence: `CONNECTED_TCP → FEATURES_RECEIVED → STARTTLS_SENT → TLS_NEGOTIATED → FEATURES_RECEIVED_POST_TLS → SASL_SUCCESS → BOUND → ONLINE`; out-of-order stanzas are rejected.
 
 ## File Structure
 
@@ -40,9 +42,10 @@
 │   └── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
 ├── test_e2e/                 # End-to-end integration tests (shell scripts)
 │   ├── _common.sh            # Shared test helpers (sourced by every test)
-│   ├── auth.sh               # E2E test for authentication
-│   ├── tls_auto_generation.sh # E2E test for TLS cert auto-generation
-│   └── tls_connection.sh     # E2E test for TLS connection
+│   ├── auth.sh               # E2E: server starts with TLS, profanity connects
+│   ├── profanity_connect.sh  # E2E: profanity authenticates and reaches ONLINE state
+│   ├── tls_auto_generation.sh # E2E: server auto-generates self-signed cert
+│   └── tls_connection.sh     # E2E: server loads external cert, openssl s_client connects
 ├── tests/                    # Unit tests (C, using cmocka)
 │   ├── test_config.c         # Config module unit tests
 │   ├── test_db.c             # Database module unit tests

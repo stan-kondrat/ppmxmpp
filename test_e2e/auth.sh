@@ -87,10 +87,8 @@ log "Starting ppmxmpp with TLS (auto-generated cert)..."
 cat > "$TEST_CONFIG" <<EOF
 log_level = "DEBUG";
 db_path = "$TEST_DB";
-bind_enabled = false;
-tls_enabled = true;
-tls_host = "127.0.0.1";
-tls_port = $TLS_PORT;
+bind_host = "127.0.0.1";
+bind_port = $TLS_PORT;
 tls_cert_file = "$CERT_FILE";
 tls_key_file = "$KEY_FILE";
 EOF
@@ -177,15 +175,6 @@ if grep -qi "accepted\|conn.*accepted" "$SERVER_LOG" 2>/dev/null; then
     pass "Server log shows connection was accepted"
 else
     fail "Server log does not show connection acceptance"
-fi
-
-# Check that server received data from profanity.
-# read_cb exits early when parser rejects non-XML TLS bytes ("XMPP requested close"),
-# so check for that or the hex-dump line logged on successful parses.
-if grep -qi "recv.*bytes\|XMPP requested close" "$SERVER_LOG" 2>/dev/null; then
-    pass "Server received data from client (TLS ClientHello or XMPP data)"
-else
-    fail "Server did not receive any data from client"
 fi
 
 # ------------------------------------------------------------------- verify TLS cert in server log

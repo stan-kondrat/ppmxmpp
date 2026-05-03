@@ -72,6 +72,11 @@ const char* buf_contains(const char* needle) {
   return memmem(g_write_buf, g_write_len, needle, strlen(needle));
 }
 
+void simulate_starttls(xmpp_session_t* ctx) {
+  ctx->state = XMPP_STATE_TLS_NEGOTIATED;
+  ctx->needs_parser_reset = 1;
+}
+
 int feed_sasl_plain(xmpp_session_t* ctx, const char* authzid, const char* authcid,
                     const char* passwd) {
   static const char b64_table[] =

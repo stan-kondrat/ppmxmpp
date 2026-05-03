@@ -9,12 +9,8 @@ extern const char DEFAULT_CONFIG_CONTENT[];
 typedef struct {
   char db_path[512];
   char log_level[16];
-  int bind_enabled;
   char bind_host[64];
   int bind_port;
-  int tls_enabled;
-  char tls_host[64];
-  int tls_port;
   char tls_cert_file[512];
   char tls_key_file[512];
 } server_config_t;
@@ -49,18 +45,6 @@ int config_set_bind_host(const char* host, server_config_t* out);
 
 /* Validate and set bind_port in out. Returns 0 on success, -1 on error. */
 int config_set_bind_port(int port, server_config_t* out);
-
-/* Validate and set bind_enabled in out. Returns 0 on success, -1 on error. */
-int config_set_bind_enabled(int enabled, server_config_t* out);
-
-/* Validate and set tls_enabled in out. Returns 0 on success, -1 on error. */
-int config_set_tls_enabled(int enabled, server_config_t* out);
-
-/* Validate and set tls_host in out. Returns 0 on success, -1 on error. */
-int config_set_tls_host(const char* host, server_config_t* out);
-
-/* Validate and set tls_port in out. Returns 0 on success, -1 on error. */
-int config_set_tls_port(int port, server_config_t* out);
 
 /* Validate and set tls_cert_file in out. Returns 0 on success, -1 on error. */
 int config_set_tls_cert_file(const char* path, server_config_t* out);

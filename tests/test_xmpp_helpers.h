@@ -23,4 +23,8 @@ const char* buf_contains(const char* needle);
 int feed_sasl_plain(xmpp_session_t* ctx, const char* authzid, const char* authcid,
                     const char* passwd);
 
+/* Simulate a completed TLS handshake: set state to CONNECTED_TLS and mark
+ * parser for reset (mirrors what server.c does after mbedtls_ssl_handshake). */
+void simulate_starttls(xmpp_session_t* ctx);
+
 #endif /* TEST_XMPP_HELPERS_H */

@@ -2,7 +2,7 @@
 #define STORAGE_ROSTER_H
 
 /* Maximum lengths matching RFC 7622 JID limits. */
-#define ROSTER_JID_MAX  1024
+#define ROSTER_JID_MAX 1024
 #define ROSTER_NAME_MAX 1024
 
 /* A single roster item returned from the database. */
@@ -10,14 +10,13 @@ typedef struct {
   char contact_jid[ROSTER_JID_MAX];
   char name[ROSTER_NAME_MAX];
   char subscription[8]; /* "none", "to", "from", "both", "remove" */
-  int  ask;             /* 1 = pending outbound subscription request */
+  int ask;              /* 1 = pending outbound subscription request */
 } storage_roster_item_t;
 
 /* Callback invoked once per roster item during iteration.
  * Return 0 to continue, non-zero to stop early. */
-typedef int (*storage_roster_item_cb)(const storage_roster_item_t* item,
-                                      const char** groups, int group_count,
-                                      void* ud);
+typedef int (*storage_roster_item_cb)(const storage_roster_item_t* item, const char** groups,
+                                      int group_count, void* ud);
 
 /* Iterate all items in owner's roster, calling cb for each.
  * Returns 0 on success (including empty roster), -1 on error. */
@@ -44,6 +43,6 @@ int storage_roster_remove(const char* owner_jid, const char* contact_jid);
  * next call to this function.
  * Returns the number of groups found, or -1 on error. */
 int storage_roster_get_groups(const char* owner_jid, const char* contact_jid,
-                               const char** groups_out, int max_groups);
+                              const char** groups_out, int max_groups);
 
 #endif /* STORAGE_ROSTER_H */

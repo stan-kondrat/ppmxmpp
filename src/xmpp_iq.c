@@ -23,7 +23,9 @@ static int iq_append(char* buf, size_t* len, size_t cap, const char* fmt, ...) {
   va_start(ap, fmt);
   int n = vsnprintf(buf + *len, cap - *len, fmt, ap);
   va_end(ap);
-  if (n < 0 || (size_t)n >= cap - *len) return -1;
+  if (n < 0 || (size_t)n >= cap - *len) {
+    return -1;
+  }
   *len += (size_t)n;
   return 0;
 }
@@ -37,44 +39,57 @@ static int iq_flush(xmpp_session_t* ctx, const char* buf, size_t len) {
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-  char*  buf;
+  char* buf;
   size_t len;
   size_t cap;
-  int    error;
+  int error;
 } roster_xml_ctx_t;
 
 static void append_item_xml(roster_xml_ctx_t* rx, const storage_roster_item_t* item,
-                             const char** groups, int gc) {
+                            const char** groups, int gc) {
   /* <item jid='...' [name='...'] subscription='...' [ask='subscribe']/> */
   if (item->name[0]) {
-    if (iq_append(rx->buf, &rx->len, rx->cap,
-                  "<item jid='%s' name='%s' subscription='%s'",
-                  item->contact_jid, item->name, item->subscription) != 0)
-      { rx->error = 1; return; }
+    if (iq_append(rx->buf, &rx->len, rx->cap, "<item jid='%s' name='%s' subscription='%s'",
+                  item->contact_jid, item->name, item->subscription) != 0) {
+      rx->error = 1;
+      return;
+    }
   } else {
-    if (iq_append(rx->buf, &rx->len, rx->cap,
-                  "<item jid='%s' subscription='%s'",
-                  item->contact_jid, item->subscription) != 0)
-      { rx->error = 1; return; }
+    if (iq_append(rx->buf, &rx->len, rx->cap, "<item jid='%s' subscription='%s'", item->contact_jid,
+                  item->subscription) != 0) {
+      rx->error = 1;
+      return;
+    }
   }
   if (item->ask) {
-    if (iq_append(rx->buf, &rx->len, rx->cap, " ask='subscribe'") != 0)
-      { rx->error = 1; return; }
+    if (iq_append(rx->buf, &rx->len, rx->cap, " ask='subscribe'") != 0) {
+      rx->error = 1;
+      return;
+    }
   }
   if (gc == 0) {
-    if (iq_append(rx->buf, &rx->len, rx->cap, "/>") != 0) rx->error = 1;
+    if (iq_append(rx->buf, &rx->len, rx->cap, "/>") != 0) {
+      rx->error = 1;
+    }
     return;
   }
-  if (iq_append(rx->buf, &rx->len, rx->cap, ">") != 0) { rx->error = 1; return; }
-  for (int i = 0; i < gc; i++) {
-    if (iq_append(rx->buf, &rx->len, rx->cap, "<group>%s</group>", groups[i]) != 0)
-      { rx->error = 1; return; }
+  if (iq_append(rx->buf, &rx->len, rx->cap, ">") != 0) {
+    rx->error = 1;
+    return;
   }
-  if (iq_append(rx->buf, &rx->len, rx->cap, "</item>") != 0) rx->error = 1;
+  for (int i = 0; i < gc; i++) {
+    if (iq_append(rx->buf, &rx->len, rx->cap, "<group>%s</group>", groups[i]) != 0) {
+      rx->error = 1;
+      return;
+    }
+  }
+  if (iq_append(rx->buf, &rx->len, rx->cap, "</item>") != 0) {
+    rx->error = 1;
+  }
 }
 
-static int roster_list_cb(const storage_roster_item_t* item,
-                           const char** groups, int gc, void* ud) {
+static int roster_list_cb(const storage_roster_item_t* item, const char** groups, int gc,
+                          void* ud) {
   roster_xml_ctx_t* rx = (roster_xml_ctx_t*)ud;
   append_item_xml(rx, item, groups, gc);
   return rx->error ? 1 : 0;
@@ -100,40 +115,47 @@ static void handle_roster_get(xmpp_session_t* ctx, const char* iq_id) {
     if (iq_append(buf, &len, IQ_BUF_SIZE,
                   "<iq type='result' id='%s'>"
                   "<query xmlns='jabber:iq:roster'>",
-                  iq_id) != 0) goto overflow;
+                  iq_id) != 0) {
+      goto overflow;
+    }
   } else {
     if (iq_append(buf, &len, IQ_BUF_SIZE,
                   "<iq type='result'>"
-                  "<query xmlns='jabber:iq:roster'>") != 0) goto overflow;
+                  "<query xmlns='jabber:iq:roster'>") != 0) {
+      goto overflow;
+    }
   }
 
-  roster_xml_ctx_t rx = { buf, len, IQ_BUF_SIZE, 0 };
+  roster_xml_ctx_t rx = {buf, len, IQ_BUF_SIZE, 0};
   /* Point len into rx so the callbacks advance it. */
   rx.len = len;
 
   if (storage_roster_list(owner, roster_list_cb, &rx) != 0 || rx.error) {
     /* Return internal-server-error */
     len = 0;
-    if (iq_id)
+    if (iq_id) {
       iq_append(buf, &len, IQ_BUF_SIZE,
                 "<iq type='error' id='%s'>"
                 "<error type='cancel'>"
                 "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>",
                 iq_id);
-    else
+    } else {
       iq_append(buf, &len, IQ_BUF_SIZE,
                 "<iq type='error'>"
                 "<error type='cancel'>"
                 "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>");
+    }
     iq_flush(ctx, buf, len);
     free(buf);
     return;
   }
 
   len = rx.len;
-  if (iq_append(buf, &len, IQ_BUF_SIZE, "</query></iq>") != 0) goto overflow;
+  if (iq_append(buf, &len, IQ_BUF_SIZE, "</query></iq>") != 0) {
+    goto overflow;
+  }
 
   stump_d("roster get owner=%s iq_id=%s", owner, iq_id ? iq_id : "(none)");
   iq_flush(ctx, buf, len);
@@ -151,22 +173,21 @@ overflow:
 
 /* Build and send a roster push to the requesting resource. */
 static void send_roster_push(xmpp_session_t* ctx, const storage_roster_item_t* item,
-                              const char** groups, int gc, const char* push_id) {
+                             const char** groups, int gc, const char* push_id) {
   char buf[4096];
   size_t len = 0;
   iq_append(buf, &len, sizeof(buf),
             "<iq type='set' id='%s'>"
             "<query xmlns='jabber:iq:roster'>",
             push_id);
-  roster_xml_ctx_t rx = { buf, len, sizeof(buf), 0 };
+  roster_xml_ctx_t rx = {buf, len, sizeof(buf), 0};
   append_item_xml(&rx, item, groups, gc);
   len = rx.len;
   iq_append(buf, &len, sizeof(buf), "</query></iq>");
   iq_flush(ctx, buf, len);
 }
 
-static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
-                               const char* iq_id) {
+static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query, const char* iq_id) {
   char owner[2048];
   snprintf(owner, sizeof(owner), "%s@%s", ctx->authcid, ctx->domain);
 
@@ -175,18 +196,20 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
   if (!item_el) {
     char buf[512];
     size_t len = 0;
-    if (iq_id)
+    if (iq_id) {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error' id='%s'>"
                 "<error type='modify'>"
                 "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>", iq_id);
-    else
+                "</error></iq>",
+                iq_id);
+    } else {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error'>"
                 "<error type='modify'>"
                 "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>");
+    }
     iq_flush(ctx, buf, len);
     return;
   }
@@ -197,18 +220,20 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
     if (strcmp(xmpp_stanza_get_name(next), "item") == 0) {
       char buf[512];
       size_t len = 0;
-      if (iq_id)
+      if (iq_id) {
         iq_append(buf, &len, sizeof(buf),
                   "<iq type='error' id='%s'>"
                   "<error type='modify'>"
                   "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>", iq_id);
-      else
+                  "</error></iq>",
+                  iq_id);
+      } else {
         iq_append(buf, &len, sizeof(buf),
                   "<iq type='error'>"
                   "<error type='modify'>"
                   "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                   "</error></iq>");
+      }
       iq_flush(ctx, buf, len);
       return;
     }
@@ -219,18 +244,20 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
   if (!contact_jid || contact_jid[0] == '\0') {
     char buf[512];
     size_t len = 0;
-    if (iq_id)
+    if (iq_id) {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error' id='%s'>"
                 "<error type='modify'>"
                 "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>", iq_id);
-    else
+                "</error></iq>",
+                iq_id);
+    } else {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error'>"
                 "<error type='modify'>"
                 "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>");
+    }
     iq_flush(ctx, buf, len);
     return;
   }
@@ -242,18 +269,20 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
     if (storage_roster_remove(owner, contact_jid) != 0) {
       char buf[512];
       size_t len = 0;
-      if (iq_id)
+      if (iq_id) {
         iq_append(buf, &len, sizeof(buf),
                   "<iq type='error' id='%s'>"
                   "<error type='cancel'>"
                   "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>", iq_id);
-      else
+                  "</error></iq>",
+                  iq_id);
+      } else {
         iq_append(buf, &len, sizeof(buf),
                   "<iq type='error'>"
                   "<error type='cancel'>"
                   "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                   "</error></iq>");
+      }
       iq_flush(ctx, buf, len);
       return;
     }
@@ -261,10 +290,11 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
     /* Acknowledge the set. */
     char ack[256];
     size_t ack_len = 0;
-    if (iq_id)
+    if (iq_id) {
       iq_append(ack, &ack_len, sizeof(ack), "<iq type='result' id='%s'/>", iq_id);
-    else
+    } else {
       iq_append(ack, &ack_len, sizeof(ack), "<iq type='result'/>");
+    }
     iq_flush(ctx, ack, ack_len);
 
     /* Roster push with subscription='remove'. */
@@ -305,25 +335,31 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
   storage_roster_item_t item;
   memset(&item, 0, sizeof(item));
   strncpy(item.contact_jid, contact_jid, sizeof(item.contact_jid) - 1);
-  if (name_attr) strncpy(item.name, name_attr, sizeof(item.name) - 1);
+  if (name_attr) {
+    strncpy(item.name, name_attr, sizeof(item.name) - 1);
+  }
   strncpy(item.subscription, "none", sizeof(item.subscription) - 1);
 
   if (storage_roster_upsert(owner, &item, groups, gc) != 0) {
-    for (int i = 0; i < gc; i++) free(group_allocs[i]);
+    for (int i = 0; i < gc; i++) {
+      free(group_allocs[i]);
+    }
     char buf[512];
     size_t len = 0;
-    if (iq_id)
+    if (iq_id) {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error' id='%s'>"
                 "<error type='cancel'>"
                 "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>", iq_id);
-    else
+                "</error></iq>",
+                iq_id);
+    } else {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error'>"
                 "<error type='cancel'>"
                 "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>");
+    }
     iq_flush(ctx, buf, len);
     return;
   }
@@ -331,10 +367,11 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
   /* Acknowledge the set. */
   char ack[256];
   size_t ack_len = 0;
-  if (iq_id)
+  if (iq_id) {
     iq_append(ack, &ack_len, sizeof(ack), "<iq type='result' id='%s'/>", iq_id);
-  else
+  } else {
     iq_append(ack, &ack_len, sizeof(ack), "<iq type='result'/>");
+  }
   iq_flush(ctx, ack, ack_len);
 
   /* Roster push. */
@@ -342,7 +379,9 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
   snprintf(push_id, sizeof(push_id), "push-%s", iq_id ? iq_id : "r");
   send_roster_push(ctx, &item, groups, gc, push_id);
 
-  for (int i = 0; i < gc; i++) free(group_allocs[i]);
+  for (int i = 0; i < gc; i++) {
+    free(group_allocs[i]);
+  }
 
   stump_d("roster set owner=%s contact=%s", owner, contact_jid);
 }
@@ -353,7 +392,7 @@ static void handle_roster_set(xmpp_session_t* ctx, xmpp_stanza_t* query,
 
 void xmpp_iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   const char* iq_type = xmpp_stanza_get_attribute(stanza, "type");
-  const char* iq_id   = xmpp_stanza_get_attribute(stanza, "id");
+  const char* iq_id = xmpp_stanza_get_attribute(stanza, "id");
 
   if (!iq_type) {
     /* Malformed IQ — return bad-request. */
@@ -374,7 +413,9 @@ void xmpp_iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   while (child) {
     const char* ct = xmpp_stanza_get_type(child);
     /* Element nodes have type NULL or "tag"; text nodes have type "text". */
-    if (!ct || strcmp(ct, "text") != 0) break;
+    if (!ct || strcmp(ct, "text") != 0) {
+      break;
+    }
     child = xmpp_stanza_get_next(child);
   }
 
@@ -397,19 +438,20 @@ void xmpp_iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   if (strcmp(iq_type, "get") == 0 || strcmp(iq_type, "set") == 0) {
     char buf[512];
     size_t len = 0;
-    if (iq_id)
+    if (iq_id) {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error' id='%s'>"
                 "<error type='cancel'>"
                 "<feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>",
                 iq_id);
-    else
+    } else {
       iq_append(buf, &len, sizeof(buf),
                 "<iq type='error'>"
                 "<error type='cancel'>"
                 "<feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
                 "</error></iq>");
+    }
     iq_flush(ctx, buf, len);
   }
 }

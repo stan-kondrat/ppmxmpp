@@ -28,7 +28,7 @@ typedef struct {
   char buf[READ_BUF_SIZE];
   uint64_t id;
   xmpp_session_t xmpp;
-  /* TLS state — only valid when is_tls == 1 */
+  /* TLS state — used for STARTTLS upgrade */
   int is_tls;
   int tls_hs_done;
   mbedtls_ssl_context ssl;
@@ -45,7 +45,6 @@ typedef struct {
 } write_req_t;
 
 static uv_tcp_t g_server;
-static uv_tcp_t g_tls_server;
 static uv_signal_t g_sigint;
 static uv_signal_t g_sigterm;
 static _Atomic uint64_t g_next_id = 1;
@@ -201,7 +200,7 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     return;
   }
 
-  /* ----- TLS path ----- */
+  /* ----- STARTTLS upgrade path ----- */
   if (conn->is_tls) {
     /* Compact consumed bytes, then append new data. */
     if (conn->tls_in_pos > 0) {
@@ -233,6 +232,8 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
       }
       stump_i("conn %" PRIu64 ": TLS handshake complete", conn->id);
       conn->tls_hs_done = 1;
+      conn->xmpp.state = XMPP_STATE_TLS_NEGOTIATED;
+      conn->xmpp.needs_parser_reset = 1;
     }
 
     /* Decrypt available records and feed plaintext to XMPP. */
@@ -265,10 +266,15 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     return;
   }
 
-  /* STARTTLS in-place upgrade: after <proceed/> is sent the XMPP state
-   * transitions to TLS_HANDSHAKING.  Init TLS now; the ClientHello will
-   * arrive in the next read_cb and drive the handshake. */
-  if (conn->xmpp.state == XMPP_STATE_TLS_HANDSHAKING && !conn->is_tls) {
+  /* STARTTLS upgrade: after <proceed/> is sent, needs_starttls_proceed is set.
+   * Init TLS now; the ClientHello will arrive in the next read_cb. */
+  if (conn->xmpp.needs_starttls_proceed && !conn->is_tls) {
+    conn->xmpp.needs_starttls_proceed = 0;
+    if (!g_tls_ctx_ready) {
+      stump_er("conn %" PRIu64 ": STARTTLS requested but no TLS context", conn->id);
+      close_conn(conn);
+      return;
+    }
     if (conn_init_tls(conn) != 0) {
       close_conn(conn);
     }
@@ -277,7 +283,7 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
 
 /* ------------------------------------------------------------------ accept */
 
-static void accept_conn(uv_stream_t* server, int status, int is_tls) {
+static void on_new_connection(uv_stream_t* server, int status) {
   if (status < 0) {
     stump_er("accept error: %s", uv_strerror(status));
     return;
@@ -301,30 +307,12 @@ static void accept_conn(uv_stream_t* server, int status, int is_tls) {
     return;
   }
 
-  if (is_tls) {
-    /* Direct-TLS port: perform TLS handshake before any XMPP.
-     * Start XMPP state at TLS_HANDSHAKING so the first stream:stream open
-     * transitions to STREAM_OPENED_TLS (not STREAM_OPENED_PLAINTEXT). */
-    conn->xmpp.state = XMPP_STATE_TLS_HANDSHAKING;
-    if (conn_init_tls(conn) != 0) {
-      uv_close((uv_handle_t*)&conn->client, on_conn_close);
-      return;
-    }
-    stump_i("conn %" PRIu64 ": accepted (TLS)", conn->id);
-  } else {
-    stump_i("conn %" PRIu64 ": accepted", conn->id);
-  }
+  stump_i("conn %" PRIu64 ": accepted", conn->id);
 
   if (uv_read_start((uv_stream_t*)&conn->client, alloc_cb, read_cb) != 0) {
     stump_er("conn %" PRIu64 ": uv_read_start failed", conn->id);
     close_conn(conn);
   }
-}
-
-static void on_new_connection(uv_stream_t* server, int status) { accept_conn(server, status, 0); }
-
-static void on_new_tls_connection(uv_stream_t* server, int status) {
-  accept_conn(server, status, 1);
 }
 
 /* ------------------------------------------------------------------ shutdown */
@@ -355,102 +343,52 @@ int file_exists(const char* path) {
 }
 
 int server_start(uv_loop_t* loop) {
-  if (!server_config.bind_enabled && !server_config.tls_enabled) {
-    stump_i("both bind and tls disabled, nothing to listen on");
-    return 0;
-  }
-
-  if (server_config.bind_enabled) {
-    struct sockaddr_in addr;
-    int r;
-
-    r = uv_ip4_addr(server_config.bind_host, server_config.bind_port, &addr);
-    if (r != 0) {
-      stump_er("invalid listen address %s:%d: %s", server_config.bind_host, server_config.bind_port,
-               uv_strerror(r));
-      return -1;
-    }
-
-    uv_tcp_init(loop, &g_server);
-    /* g_server.data stays NULL — see close_walk_cb */
-
-    r = uv_tcp_bind(&g_server, (const struct sockaddr*)&addr, 0);
-    if (r != 0) {
-      stump_er("uv_tcp_bind %s:%d: %s", server_config.bind_host, server_config.bind_port,
-               uv_strerror(r));
-      uv_close((uv_handle_t*)&g_server, NULL);
-      return -1;
-    }
-
-    r = uv_listen((uv_stream_t*)&g_server, 128, on_new_connection);
-    if (r != 0) {
-      stump_er("uv_listen: %s", uv_strerror(r));
-      uv_close((uv_handle_t*)&g_server, NULL);
-      return -1;
-    }
-
-    stump_i("listening on %s:%d", server_config.bind_host, server_config.bind_port);
-  }
-
-  if (server_config.tls_enabled) {
+  /* Init TLS context when cert/key are configured — needed for STARTTLS. */
+  if (server_config.tls_cert_file[0] != '\0' && server_config.tls_key_file[0] != '\0') {
     if (!file_exists(server_config.tls_cert_file) || !file_exists(server_config.tls_key_file)) {
-      stump_i("TLS enabled but cert/key missing, generating self-signed certificate");
+      stump_i("TLS cert/key missing, generating self-signed certificate");
       if (generate_self_signed_cert(server_config.tls_cert_file, server_config.tls_key_file) != 0) {
         stump_er("failed to generate self-signed certificate");
         return -1;
       }
     }
-
     if (tls_server_ctx_init(&g_tls_ctx, server_config.tls_cert_file, server_config.tls_key_file) !=
         0) {
       stump_er("failed to initialize TLS server context");
       return -1;
     }
     g_tls_ctx_ready = 1;
-
-    struct sockaddr_in tls_addr;
-    int tls_r = uv_ip4_addr(server_config.tls_host, server_config.tls_port, &tls_addr);
-    if (tls_r != 0) {
-      stump_er("invalid TLS address %s:%d: %s", server_config.tls_host, server_config.tls_port,
-               uv_strerror(tls_r));
-      if (server_config.bind_enabled) {
-        uv_close((uv_handle_t*)&g_server, NULL);
-      }
-      tls_server_ctx_free(&g_tls_ctx);
-      g_tls_ctx_ready = 0;
-      return -1;
-    }
-
-    uv_tcp_init(loop, &g_tls_server);
-    g_tls_server.data = NULL;
-
-    tls_r = uv_tcp_bind(&g_tls_server, (const struct sockaddr*)&tls_addr, 0);
-    if (tls_r != 0) {
-      stump_er("uv_tcp_bind %s:%d: %s", server_config.tls_host, server_config.tls_port,
-               uv_strerror(tls_r));
-      if (server_config.bind_enabled) {
-        uv_close((uv_handle_t*)&g_server, NULL);
-      }
-      uv_close((uv_handle_t*)&g_tls_server, NULL);
-      tls_server_ctx_free(&g_tls_ctx);
-      g_tls_ctx_ready = 0;
-      return -1;
-    }
-
-    tls_r = uv_listen((uv_stream_t*)&g_tls_server, 128, on_new_tls_connection);
-    if (tls_r != 0) {
-      stump_er("uv_listen TLS: %s", uv_strerror(tls_r));
-      if (server_config.bind_enabled) {
-        uv_close((uv_handle_t*)&g_server, NULL);
-      }
-      uv_close((uv_handle_t*)&g_tls_server, NULL);
-      tls_server_ctx_free(&g_tls_ctx);
-      g_tls_ctx_ready = 0;
-      return -1;
-    }
-
-    stump_i("listening on TLS %s:%d", server_config.tls_host, server_config.tls_port);
+    stump_i("TLS context ready (STARTTLS available)");
   }
+
+  struct sockaddr_in addr;
+  int r = uv_ip4_addr(server_config.bind_host, server_config.bind_port, &addr);
+  if (r != 0) {
+    stump_er("invalid listen address %s:%d: %s", server_config.bind_host, server_config.bind_port,
+             uv_strerror(r));
+    return -1;
+  }
+
+  uv_tcp_init(loop, &g_server);
+  /* g_server.data stays NULL — see close_walk_cb */
+
+  r = uv_tcp_bind(&g_server, (const struct sockaddr*)&addr, 0);
+  if (r != 0) {
+    stump_er("uv_tcp_bind %s:%d: %s", server_config.bind_host, server_config.bind_port,
+             uv_strerror(r));
+    uv_close((uv_handle_t*)&g_server, NULL);
+    return -1;
+  }
+
+  r = uv_listen((uv_stream_t*)&g_server, 128, on_new_connection);
+  if (r != 0) {
+    stump_er("uv_listen: %s", uv_strerror(r));
+    uv_close((uv_handle_t*)&g_server, NULL);
+    return -1;
+  }
+
+  stump_i("listening on %s:%d%s", server_config.bind_host, server_config.bind_port,
+          g_tls_ctx_ready ? " (TLS ready)" : "");
 
   uv_signal_init(loop, &g_sigint);
   uv_signal_start(&g_sigint, on_signal, SIGINT);

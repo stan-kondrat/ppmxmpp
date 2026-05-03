@@ -16,7 +16,7 @@
 #include "xmpp.h"
 
 /* ------------------------------------------------------------------ */
-/*  Helper: drive a session to XMPP_STATE_CONNECTED                  */
+/*  Helper: drive a session to XMPP_STATE_CONNECTED_TCP                  */
 /* ------------------------------------------------------------------ */
 
 static int feed_stream_open_local(xmpp_session_t* ctx, const char* domain) {
@@ -33,35 +33,59 @@ static int feed_to_connected(xmpp_session_t* ctx) {
   xmpp_session_reset(ctx);
   g_write_len = 0;
 
-  if (feed_stream_open_local(ctx, "localhost") != 0) return -1;
-  if (ctx->state != XMPP_STATE_STREAM_OPENED_PLAINTEXT) return -1;
+  if (feed_stream_open_local(ctx, "localhost") != 0) {
+    return -1;
+  }
+  if (ctx->state != XMPP_STATE_FEATURES_RECEIVED) {
+    return -1;
+  }
 
   g_write_len = 0;
   const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
-  if (xmpp_feed(ctx, starttls, strlen(starttls), mock_write, NULL) != 0) return -1;
-  if (ctx->state != XMPP_STATE_TLS_HANDSHAKING) return -1;
+  if (xmpp_feed(ctx, starttls, strlen(starttls), mock_write, NULL) != 0) {
+    return -1;
+  }
+  if (ctx->state != XMPP_STATE_STARTTLS_SENT) {
+    return -1;
+  }
 
   g_write_len = 0;
   const char* r1 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
                    " xmlns='jabber:client' to='localhost' version='1.0'>";
-  if (xmpp_feed(ctx, r1, strlen(r1), mock_write, NULL) != 0) return -1;
-  if (ctx->state != XMPP_STATE_STREAM_OPENED_TLS) return -1;
+  if (xmpp_feed(ctx, r1, strlen(r1), mock_write, NULL) != 0) {
+    return -1;
+  }
+  if (ctx->state != XMPP_STATE_FEATURES_RECEIVED_POST_TLS) {
+    return -1;
+  }
 
-  if (feed_sasl_plain(ctx, "", "testuser", "testpass") != 0) return -1;
-  if (ctx->state != XMPP_STATE_STREAM_OPENED_AUTHENTICATED) return -1;
+  if (feed_sasl_plain(ctx, "", "testuser", "testpass") != 0) {
+    return -1;
+  }
+  if (ctx->state != XMPP_STATE_SASL_SUCCESS) {
+    return -1;
+  }
 
   g_write_len = 0;
   const char* r2 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
                    " xmlns='jabber:client' to='localhost' version='1.0'>";
-  if (xmpp_feed(ctx, r2, strlen(r2), mock_write, NULL) != 0) return -1;
-  if (ctx->state != XMPP_STATE_RESOURCE_BOUND) return -1;
+  if (xmpp_feed(ctx, r2, strlen(r2), mock_write, NULL) != 0) {
+    return -1;
+  }
+  if (ctx->state != XMPP_STATE_BOUND) {
+    return -1;
+  }
 
   g_write_len = 0;
   const char* bind = "<iq type='set' id='b1'>"
                      "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
                      "<resource>test</resource></bind></iq>";
-  if (xmpp_feed(ctx, bind, strlen(bind), mock_write, NULL) != 0) return -1;
-  if (ctx->state != XMPP_STATE_CONNECTED) return -1;
+  if (xmpp_feed(ctx, bind, strlen(bind), mock_write, NULL) != 0) {
+    return -1;
+  }
+  if (ctx->state != XMPP_STATE_ONLINE) {
+    return -1;
+  }
 
   g_write_len = 0;
   return 0;
@@ -105,11 +129,10 @@ static void test_roster_set_add(void** state) {
   xmpp_session_t ctx;
   assert_int_equal(feed_to_connected(&ctx), 0);
 
-  const char* iq =
-      "<iq type='set' id='rs1'>"
-      "<query xmlns='jabber:iq:roster'>"
-      "<item jid='friend@example.com' name='Friend'/>"
-      "</query></iq>";
+  const char* iq = "<iq type='set' id='rs1'>"
+                   "<query xmlns='jabber:iq:roster'>"
+                   "<item jid='friend@example.com' name='Friend'/>"
+                   "</query></iq>";
   int rc = xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL);
   assert_int_equal(rc, 0);
   /* Acknowledge */
@@ -137,7 +160,7 @@ static void test_roster_get_after_add(void** state) {
   strncpy(item.contact_jid, "bob@example.com", sizeof(item.contact_jid) - 1);
   strncpy(item.name, "Bob", sizeof(item.name) - 1);
   strncpy(item.subscription, "both", sizeof(item.subscription) - 1);
-  const char* groups[] = { "Friends" };
+  const char* groups[] = {"Friends"};
   assert_int_equal(storage_roster_upsert("testuser@localhost", &item, groups, 1), 0);
   storage_db_close();
 
@@ -178,11 +201,10 @@ static void test_roster_set_remove(void** state) {
   xmpp_session_t ctx;
   assert_int_equal(feed_to_connected(&ctx), 0);
 
-  const char* iq =
-      "<iq type='set' id='rs2'>"
-      "<query xmlns='jabber:iq:roster'>"
-      "<item jid='alice@example.com' subscription='remove'/>"
-      "</query></iq>";
+  const char* iq = "<iq type='set' id='rs2'>"
+                   "<query xmlns='jabber:iq:roster'>"
+                   "<item jid='alice@example.com' subscription='remove'/>"
+                   "</query></iq>";
   int rc = xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_true(buf_contains("<iq type='result' id='rs2'/>"));
@@ -212,12 +234,11 @@ static void test_roster_set_multiple_items(void** state) {
   xmpp_session_t ctx;
   assert_int_equal(feed_to_connected(&ctx), 0);
 
-  const char* iq =
-      "<iq type='set' id='rs3'>"
-      "<query xmlns='jabber:iq:roster'>"
-      "<item jid='a@example.com'/>"
-      "<item jid='b@example.com'/>"
-      "</query></iq>";
+  const char* iq = "<iq type='set' id='rs3'>"
+                   "<query xmlns='jabber:iq:roster'>"
+                   "<item jid='a@example.com'/>"
+                   "<item jid='b@example.com'/>"
+                   "</query></iq>";
   int rc = xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_true(buf_contains("<iq type='error' id='rs3'>"));
@@ -239,11 +260,10 @@ static void test_roster_set_missing_jid(void** state) {
   xmpp_session_t ctx;
   assert_int_equal(feed_to_connected(&ctx), 0);
 
-  const char* iq =
-      "<iq type='set' id='rs4'>"
-      "<query xmlns='jabber:iq:roster'>"
-      "<item name='NoJid'/>"
-      "</query></iq>";
+  const char* iq = "<iq type='set' id='rs4'>"
+                   "<query xmlns='jabber:iq:roster'>"
+                   "<item name='NoJid'/>"
+                   "</query></iq>";
   int rc = xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_true(buf_contains("<iq type='error' id='rs4'>"));
@@ -265,9 +285,8 @@ static void test_iq_unknown_namespace(void** state) {
   xmpp_session_t ctx;
   assert_int_equal(feed_to_connected(&ctx), 0);
 
-  const char* iq =
-      "<iq type='get' id='u1'>"
-      "<query xmlns='jabber:iq:unknown'/></iq>";
+  const char* iq = "<iq type='get' id='u1'>"
+                   "<query xmlns='jabber:iq:unknown'/></iq>";
   int rc = xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_true(buf_contains("<iq type='error' id='u1'>"));
@@ -289,13 +308,12 @@ static void test_roster_set_with_group(void** state) {
   xmpp_session_t ctx;
   assert_int_equal(feed_to_connected(&ctx), 0);
 
-  const char* iq =
-      "<iq type='set' id='rs5'>"
-      "<query xmlns='jabber:iq:roster'>"
-      "<item jid='carol@example.com' name='Carol'>"
-      "<group>Work</group>"
-      "</item>"
-      "</query></iq>";
+  const char* iq = "<iq type='set' id='rs5'>"
+                   "<query xmlns='jabber:iq:roster'>"
+                   "<item jid='carol@example.com' name='Carol'>"
+                   "<group>Work</group>"
+                   "</item>"
+                   "</query></iq>";
   int rc = xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL);
   assert_int_equal(rc, 0);
   assert_true(buf_contains("<iq type='result' id='rs5'/>"));

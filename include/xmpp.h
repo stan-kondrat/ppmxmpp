@@ -5,15 +5,40 @@
 
 /* XMPP stream negotiation states (RFC 6120). */
 typedef enum {
-  XMPP_STATE_CONNECTED,
-  XMPP_STATE_STREAM_OPENED_PLAINTEXT,
-  XMPP_STATE_TLS_HANDSHAKING,
-  XMPP_STATE_STREAM_OPENED_TLS,
-  XMPP_STATE_SASL_AUTHENTICATING,
-  XMPP_STATE_STREAM_OPENED_AUTHENTICATED,
-  XMPP_STATE_RESOURCE_BOUND,
+  XMPP_STATE_DISCONNECTED,
+
+  /* Transport */
+  XMPP_STATE_CONNECTED_TCP,
+
+  /* Initial stream (plaintext) */
+  XMPP_STATE_STREAM_OPENED,
+  XMPP_STATE_FEATURES_RECEIVED,
+
+  /* TLS */
+  XMPP_STATE_STARTTLS_SENT,
+  XMPP_STATE_TLS_NEGOTIATED,
+
+  /* Stream restart after TLS */
+  XMPP_STATE_STREAM_RESTARTED_POST_TLS,
+  XMPP_STATE_FEATURES_RECEIVED_POST_TLS,
+
+  /* SASL */
+  XMPP_STATE_SASL_NEGOTIATING,
+  XMPP_STATE_SASL_SUCCESS,
+
+  /* Stream restart after SASL */
+  XMPP_STATE_STREAM_RESTARTED_POST_SASL,
+  XMPP_STATE_FEATURES_RECEIVED_POST_SASL,
+
+  /* Resource binding */
+  XMPP_STATE_RESOURCE_BINDING,
+  XMPP_STATE_BOUND,
+
+  /* Ready */
+  XMPP_STATE_ONLINE,
+
   XMPP_STATE_CLOSING,
-  XMPP_STATE_CLOSED,
+  XMPP_STATE_CLOSED
 } xmpp_state_t;
 
 /* Callback type for synchronous writes. */
@@ -46,8 +71,7 @@ typedef struct {
   char stream_id[17];            /* unique per-session stream ID — RFC 6120 §4.7.3 */
   char expected_stanza_ns[256];  /* expected namespace for out-of-order validation */
   char expected_stanza_name[64]; /* expected stanza name for out-of-order validation */
-  int needs_parser_reset;        /* reset parser before next feed (after SASL success)
-                                  */
+  int needs_parser_reset;        /* reset parser before next feed (after SASL success) */
   int needs_starttls_proceed;    /* sent <proceed/>, server must do TLS handshake */
   void* strophe_ctx;             /* opaque libstrophe xmpp_ctx_t * */
   void* parser;                  /* opaque parser_t * */

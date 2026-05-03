@@ -172,7 +172,7 @@ int tls_server_ctx_init(tls_server_ctx_t* ctx, const char* cert_path, const char
   mbedtls_x509_crt_init(&ctx->cert);
   mbedtls_pk_init(&ctx->key);
 
-  /* PSA crypto must be initialized for mbedtls RNG (idempotent). */
+  /* mbedTLS 4.x uses PSA Crypto for all RNG — no explicit rng config needed. */
   psa_crypto_init();
 
   ret = mbedtls_x509_crt_parse_file(&ctx->cert, cert_path);
