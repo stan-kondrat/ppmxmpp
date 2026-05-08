@@ -40,7 +40,7 @@ not stored on `xmpp_session_t` for routing (Steps 8–10).
 
 ## Done criteria
 
-- [ ] Real client completes bind and shows the bound JID including resource.
+- [x] Real client completes bind and shows the bound JID including resource.
 - [x] Bind with client-supplied resource returns `user@domain/<resource>` exactly.
 - [x] Bind without `<resource>` child returns `user@domain/<generated-8hex>`.
 - [x] Bind with oversized resource (> 1023 bytes) yields `<bad-request>` bind error.
