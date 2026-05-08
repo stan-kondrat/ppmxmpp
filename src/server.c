@@ -14,6 +14,7 @@
 #include "server.h"
 #include "tls.h"
 #include "xmpp.h"
+#include "xmpp_presence.h"
 
 #include <sys/stat.h>
 
@@ -51,10 +52,26 @@ static _Atomic uint64_t g_next_id = 1;
 static tls_server_ctx_t g_tls_ctx;
 static int g_tls_ctx_ready = 0;
 
+static int conn_write(void* ud, const char* data, size_t len);
+
 /* ------------------------------------------------------------------ close */
 
 static void on_conn_close(uv_handle_t* handle) {
   conn_t* conn = (conn_t*)handle;
+
+  /* RFC 6121 §4.4.2: broadcast unavailable on ungraceful disconnect if the
+   * session had sent initial presence (registered in the presence table). */
+  if (conn->xmpp.bound_jid[0] != '\0') {
+    char bare_jid[3073];
+    const char* slash = strchr(conn->xmpp.bound_jid, '/');
+    size_t bare_len = slash ? (size_t)(slash - conn->xmpp.bound_jid)
+                            : strlen(conn->xmpp.bound_jid);
+    if (bare_len >= sizeof(bare_jid)) bare_len = sizeof(bare_jid) - 1;
+    memcpy(bare_jid, conn->xmpp.bound_jid, bare_len);
+    bare_jid[bare_len] = '\0';
+    xmpp_presence_on_disconnect(conn->xmpp.bound_jid, bare_jid);
+  }
+
   if (conn->is_tls) {
     mbedtls_ssl_free(&conn->ssl);
   }

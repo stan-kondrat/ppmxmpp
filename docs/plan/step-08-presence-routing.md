@@ -1,6 +1,6 @@
 # Step 8 — Presence routing within the server
 
-**Status: ❌ NOT DONE**
+**Status: ✅ DONE**
 
 ## What
 
@@ -31,6 +31,15 @@ No presence stanza handling. No in-memory session registry. No broadcast logic. 
 
 ## Done criteria
 
-- [ ] Two clients of the same user log in; each sees the other's presence.
-- [ ] A user's presence appears as "online" on a contact's roster after mutual subscription.
-- [ ] Disconnecting a resource sends `unavailable` to subscribers.
+- [x] Two clients of the same user log in; each sees the other's presence.
+- [x] A user's presence appears as "online" on a contact's roster after mutual subscription.
+- [x] Disconnecting a resource sends `unavailable` to subscribers.
+
+## Implementation notes
+
+- `include/xmpp_presence.h` / `src/xmpp_presence.c`: flat array session registry (`SESSION_TABLE_CAP 256`), swap-with-last unregister, `broadcast_presence` opens DB per broadcast via `storage_roster_list`.
+- Session registration deferred to initial `<presence/>` send (not bind), per RFC 6121 §4.2.
+- `xmpp_presence_on_disconnect` is a no-op if the session never sent initial presence (no unavailable flood for connections that dropped before going available).
+- `src/xmpp.c`: ONLINE state dispatches `presence` stanzas to `xmpp_presence_handle`.
+- `src/server.c` `on_conn_close`: calls `xmpp_presence_on_disconnect` before `xmpp_session_cleanup`.
+- 14 unit tests in `tests/xmpp_presence.c` covering registry, initial/unavailable/directed presence, and disconnect.

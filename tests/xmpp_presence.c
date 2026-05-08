@@ -1,0 +1,455 @@
+#include <cmocka.h>
+#include <setjmp.h>
+#include <stdarg.h>
+#include <stddef.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "config.h"
+#include "storage/db.h"
+#include "storage/roster.h"
+#include "test_xmpp_helpers.h"
+#include "xmpp.h"
+#include "xmpp_presence.h"
+
+/* ------------------------------------------------------------------ */
+/*  Per-test write sink                                                */
+/*                                                                     */
+/*  Each "virtual client" gets its own sink so we can verify which    */
+/*  sessions received which stanzas independently of g_write_buf.     */
+/* ------------------------------------------------------------------ */
+
+#define SINK_BUF_SIZE 65536
+
+typedef struct {
+  char buf[SINK_BUF_SIZE];
+  size_t len;
+} write_sink_t;
+
+static int sink_write(void* ud, const char* data, size_t len) {
+  write_sink_t* s = (write_sink_t*)ud;
+  if (s->len + len > SINK_BUF_SIZE) len = SINK_BUF_SIZE - s->len;
+  memcpy(s->buf + s->len, data, len);
+  s->len += len;
+  return 0;
+}
+
+static int sink_contains(const write_sink_t* s, const char* needle) {
+  return memmem(s->buf, s->len, needle, strlen(needle)) != NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+/* Add a roster entry with a given subscription state. */
+static int add_roster_entry(const char* owner, const char* contact, const char* subscription) {
+  sqlite3* db;
+  if (storage_db_open(&db) != 0) return -1;
+  storage_roster_item_t item;
+  memset(&item, 0, sizeof(item));
+  strncpy(item.contact_jid, contact, sizeof(item.contact_jid) - 1);
+  strncpy(item.subscription, subscription, sizeof(item.subscription) - 1);
+  int rc = storage_roster_upsert(owner, &item, NULL, 0);
+  storage_db_close();
+  return rc;
+}
+
+static int presence_test_setup(void** state) {
+  (void)state;
+  presence_session_reset_all();
+  return 0;
+}
+
+static int presence_test_teardown(void** state) {
+  (void)state;
+  presence_session_reset_all();
+  return 0;
+}
+
+/* Build a minimal xmpp_session_t with a bound_jid set, without going
+ * through the full handshake — used for session registry tests that do
+ * not need to feed XML through the parser. */
+static void make_session(xmpp_session_t* ctx, const char* bound_jid) {
+  memset(ctx, 0, sizeof(*ctx));
+  ctx->state = XMPP_STATE_ONLINE;
+  strncpy(ctx->bound_jid, bound_jid, sizeof(ctx->bound_jid) - 1);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Session registry tests                                             */
+/* ------------------------------------------------------------------ */
+
+static void test_register_and_write(void** state) {
+  (void)state;
+  write_sink_t sink = {.len = 0};
+
+  xmpp_session_t ctx;
+  make_session(&ctx, "alice@localhost/res1");
+  presence_session_register(&ctx, sink_write, &sink);
+
+  int rc = presence_session_write("alice@localhost/res1", "hello", 5);
+  assert_int_equal(rc, 0);
+  assert_true(sink_contains(&sink, "hello"));
+
+  presence_session_unregister("alice@localhost/res1");
+}
+
+static void test_write_unknown_session_returns_minus1(void** state) {
+  (void)state;
+  int rc = presence_session_write("nobody@localhost/x", "data", 4);
+  assert_int_equal(rc, -1);
+}
+
+static void test_unregister_removes_session(void** state) {
+  (void)state;
+  write_sink_t sink = {.len = 0};
+
+  xmpp_session_t ctx;
+  make_session(&ctx, "bob@localhost/r1");
+  presence_session_register(&ctx, sink_write, &sink);
+  presence_session_unregister("bob@localhost/r1");
+
+  int rc = presence_session_write("bob@localhost/r1", "x", 1);
+  assert_int_equal(rc, -1);
+}
+
+static void test_re_register_updates_callbacks(void** state) {
+  (void)state;
+  write_sink_t sink1 = {.len = 0};
+  write_sink_t sink2 = {.len = 0};
+
+  xmpp_session_t ctx;
+  make_session(&ctx, "carol@localhost/r");
+  presence_session_register(&ctx, sink_write, &sink1);
+  presence_session_register(&ctx, sink_write, &sink2);
+
+  presence_session_write("carol@localhost/r", "hi", 2);
+  assert_int_equal(sink1.len, 0);  /* old sink not written */
+  assert_true(sink_contains(&sink2, "hi"));
+
+  presence_session_unregister("carol@localhost/r");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Initial presence broadcast                                         */
+/* ------------------------------------------------------------------ */
+
+static void test_initial_presence_reaches_subscriber(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* testuser@localhost has contact2@localhost with subscription="from"
+   * (contact2 subscribed to testuser's presence). */
+  assert_int_equal(add_roster_entry("testuser@localhost", "contact2@localhost", "from"), 0);
+
+  /* Register contact2's session. */
+  write_sink_t contact2_sink = {.len = 0};
+  xmpp_session_t contact2;
+  make_session(&contact2, "contact2@localhost/phone");
+  presence_session_register(&contact2, sink_write, &contact2_sink);
+
+  /* testuser goes online via the full XMPP handshake. */
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  const char* pres = "<presence/>";
+  assert_int_equal(xmpp_feed(&ctx, pres, strlen(pres), mock_write, NULL), 0);
+
+  /* contact2 should have received the presence broadcast. */
+  assert_true(sink_contains(&contact2_sink, "<presence from='testuser@localhost/"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("contact2@localhost/phone");
+  teardown_test_db();
+}
+
+static void test_initial_presence_not_sent_to_non_subscriber(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* subscription="to" means WE subscribed to THEM — they should NOT get our presence. */
+  assert_int_equal(add_roster_entry("testuser@localhost", "other@localhost", "to"), 0);
+
+  write_sink_t other_sink = {.len = 0};
+  xmpp_session_t other;
+  make_session(&other, "other@localhost/pc");
+  presence_session_register(&other, sink_write, &other_sink);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  const char* pres = "<presence/>";
+  xmpp_feed(&ctx, pres, strlen(pres), mock_write, NULL);
+
+  assert_int_equal(other_sink.len, 0);
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("other@localhost/pc");
+  teardown_test_db();
+}
+
+static void test_initial_presence_sent_to_both_subscription(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  assert_int_equal(add_roster_entry("testuser@localhost", "buddy@localhost", "both"), 0);
+
+  write_sink_t buddy_sink = {.len = 0};
+  xmpp_session_t buddy;
+  make_session(&buddy, "buddy@localhost/web");
+  presence_session_register(&buddy, sink_write, &buddy_sink);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  xmpp_feed(&ctx, "<presence/>", strlen("<presence/>"), mock_write, NULL);
+
+  assert_true(sink_contains(&buddy_sink, "<presence from='testuser@localhost/"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("buddy@localhost/web");
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Own other resources receive initial presence (RFC 6121 §4.2.2)   */
+/* ------------------------------------------------------------------ */
+
+static void test_initial_presence_sent_to_own_other_resource(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* Register a second resource for testuser. */
+  write_sink_t res2_sink = {.len = 0};
+  xmpp_session_t res2;
+  make_session(&res2, "testuser@localhost/mobile");
+  presence_session_register(&res2, sink_write, &res2_sink);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  xmpp_feed(&ctx, "<presence/>", strlen("<presence/>"), mock_write, NULL);
+
+  /* The other resource of the same user should receive the broadcast. */
+  assert_true(sink_contains(&res2_sink, "<presence from='testuser@localhost/"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("testuser@localhost/mobile");
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Unavailable presence broadcast (RFC 6121 §4.4)                   */
+/* ------------------------------------------------------------------ */
+
+static void test_unavailable_presence_reaches_subscriber(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  assert_int_equal(add_roster_entry("testuser@localhost", "watcher@localhost", "from"), 0);
+
+  write_sink_t watcher_sink = {.len = 0};
+  xmpp_session_t watcher;
+  make_session(&watcher, "watcher@localhost/lap");
+  presence_session_register(&watcher, sink_write, &watcher_sink);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  /* Send initial presence first so the session is considered available. */
+  xmpp_feed(&ctx, "<presence/>", strlen("<presence/>"), mock_write, NULL);
+  watcher_sink.len = 0;  /* reset to isolate the unavailable check */
+
+  const char* unav = "<presence type='unavailable'/>";
+  xmpp_feed(&ctx, unav, strlen(unav), mock_write, NULL);
+
+  assert_true(sink_contains(&watcher_sink, "type='unavailable'"));
+  assert_true(sink_contains(&watcher_sink, "from='testuser@localhost/"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("watcher@localhost/lap");
+  teardown_test_db();
+}
+
+static void test_unavailable_unregisters_session(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  xmpp_feed(&ctx, "<presence/>", strlen("<presence/>"), mock_write, NULL);
+
+  /* Sending unavailable should remove the session from the registry. */
+  xmpp_feed(&ctx, "<presence type='unavailable'/>",
+            strlen("<presence type='unavailable'/>"), mock_write, NULL);
+
+  assert_int_equal(presence_session_write(ctx.bound_jid, "x", 1), -1);
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Directed presence (RFC 6121 §4.6)                                 */
+/* ------------------------------------------------------------------ */
+
+static void test_directed_presence_delivered_to_full_jid(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  write_sink_t target_sink = {.len = 0};
+  xmpp_session_t target;
+  make_session(&target, "friend@localhost/desk");
+  presence_session_register(&target, sink_write, &target_sink);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  const char* dp = "<presence to='friend@localhost/desk'/>";
+  xmpp_feed(&ctx, dp, strlen(dp), mock_write, NULL);
+
+  assert_true(sink_contains(&target_sink, "from='testuser@localhost/"));
+  assert_true(sink_contains(&target_sink, "to='friend@localhost/desk'"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("friend@localhost/desk");
+  teardown_test_db();
+}
+
+static void test_directed_presence_delivered_to_bare_jid(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* Two resources for the target bare JID. */
+  write_sink_t sink_a = {.len = 0}, sink_b = {.len = 0};
+  xmpp_session_t res_a, res_b;
+  make_session(&res_a, "multi@localhost/a");
+  make_session(&res_b, "multi@localhost/b");
+  presence_session_register(&res_a, sink_write, &sink_a);
+  presence_session_register(&res_b, sink_write, &sink_b);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  /* Directed to bare JID — both resources should receive it. */
+  const char* dp = "<presence to='multi@localhost'/>";
+  xmpp_feed(&ctx, dp, strlen(dp), mock_write, NULL);
+
+  assert_true(sink_contains(&sink_a, "from='testuser@localhost/"));
+  assert_true(sink_contains(&sink_b, "from='testuser@localhost/"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("multi@localhost/a");
+  presence_session_unregister("multi@localhost/b");
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Disconnect triggers unavailable broadcast (RFC 6121 §4.4.2)       */
+/* ------------------------------------------------------------------ */
+
+static void test_disconnect_broadcasts_unavailable(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  assert_int_equal(add_roster_entry("testuser@localhost", "watch2@localhost", "from"), 0);
+
+  write_sink_t watch2_sink = {.len = 0};
+  xmpp_session_t watch2;
+  make_session(&watch2, "watch2@localhost/x");
+  presence_session_register(&watch2, sink_write, &watch2_sink);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  g_write_len = 0;
+
+  /* Send initial presence so the session is registered as available. */
+  xmpp_feed(&ctx, "<presence/>", strlen("<presence/>"), mock_write, NULL);
+  watch2_sink.len = 0;
+
+  /* Simulate ungraceful disconnect. */
+  char bare_jid[64];
+  const char* slash = strchr(ctx.bound_jid, '/');
+  size_t blen = slash ? (size_t)(slash - ctx.bound_jid) : strlen(ctx.bound_jid);
+  memcpy(bare_jid, ctx.bound_jid, blen);
+  bare_jid[blen] = '\0';
+  xmpp_presence_on_disconnect(ctx.bound_jid, bare_jid);
+
+  assert_true(sink_contains(&watch2_sink, "type='unavailable'"));
+
+  xmpp_session_cleanup(&ctx);
+  presence_session_unregister("watch2@localhost/x");
+  teardown_test_db();
+}
+
+static void test_disconnect_noop_when_never_sent_presence(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  xmpp_session_t ctx;
+  assert_int_equal(feed_to_online(&ctx), 0);
+  /* Do NOT send <presence/> — session is bound but not registered in table. */
+
+  xmpp_presence_on_disconnect(ctx.bound_jid, "testuser@localhost");
+
+  /* Nothing should be written to any subscriber. */
+  assert_int_equal(g_write_len, 0);
+
+  xmpp_session_cleanup(&ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main                                                               */
+/* ------------------------------------------------------------------ */
+
+int main(void) {
+  const struct CMUnitTest tests[] = {
+      /* Registry */
+      cmocka_unit_test_setup_teardown(test_register_and_write, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_write_unknown_session_returns_minus1, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_unregister_removes_session, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_re_register_updates_callbacks, presence_test_setup, presence_test_teardown),
+
+      /* Initial presence */
+      cmocka_unit_test_setup_teardown(test_initial_presence_reaches_subscriber, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_initial_presence_not_sent_to_non_subscriber, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_initial_presence_sent_to_both_subscription, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_initial_presence_sent_to_own_other_resource, presence_test_setup, presence_test_teardown),
+
+      /* Unavailable presence */
+      cmocka_unit_test_setup_teardown(test_unavailable_presence_reaches_subscriber, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_unavailable_unregisters_session, presence_test_setup, presence_test_teardown),
+
+      /* Directed presence */
+      cmocka_unit_test_setup_teardown(test_directed_presence_delivered_to_full_jid, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_directed_presence_delivered_to_bare_jid, presence_test_setup, presence_test_teardown),
+
+      /* Disconnect */
+      cmocka_unit_test_setup_teardown(test_disconnect_broadcasts_unavailable, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_disconnect_noop_when_never_sent_presence, presence_test_setup, presence_test_teardown),
+  };
+  return cmocka_run_group_tests(tests, NULL, NULL);
+}

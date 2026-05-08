@@ -306,7 +306,7 @@ third-party: $(THIRDPARTY_STAMPS)
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
 TEST_BINS   := $(patsubst $(TESTDIR)/%.c,$(BUILDDIR)/%,$(TEST_SRCS))
-TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/test_xmpp_helpers,$(TEST_BINS))
+TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xmpp_presence $(BUILDDIR)/test_xmpp_helpers,$(TEST_BINS))
 
 # Objects shared between tests and the main binary (everything except main.o)
 LIB_OBJS    := $(filter-out $(BUILDDIR)/main.o,$(OBJS))
@@ -368,6 +368,10 @@ $(BUILDDIR)/xep-0199-ping: $(TESTDIR)/xep-0199-ping.c $(TESTDIR)/test_xmpp_helpe
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
 	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
+$(BUILDDIR)/xmpp_presence: $(TESTDIR)/xmpp_presence.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 
@@ -413,8 +417,8 @@ clean:
 distclean: clean
 	rm -f $(SQLITE_STAMP)
 
-test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping
-	@for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping; do echo "--- $$t ---"; $$t; done
+test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xmpp_presence
+	@for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xmpp_presence; do echo "--- $$t ---"; $$t; done
 
 format:
 	@echo "Formatting source files..."

@@ -20,6 +20,7 @@
 │   ├── xmpp_iq.h             # IQ dispatch module header
 │   ├── xmpp_iq_buf.h         # Inline helpers: iq_append / iq_flush (shared by IQ handlers)
 │   ├── xmpp_sasl.h           # SASL authentication module header (sasl_rc_t + handle_sasl_plain)
+│   ├── xmpp_presence.h       # Presence routing module header (session registry + handler)
 │   ├── xep-0030-service-discovery.h  # XEP-0030 disco#info handler header
 │   └── xep-0199-ping.h       # XEP-0199 ping handler header
 ├── scripts/                  # Utility scripts
@@ -33,6 +34,7 @@
 │   ├── xmpp.c                # XMPP protocol handling (stream negotiation, bind)
 │   ├── xmpp_iq.c             # IQ stanza dispatch (roster, XEP-0030, XEP-0199, errors)
 │   ├── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
+│   ├── xmpp_presence.c       # Presence routing (RFC 6121 §4.2/§4.4/§4.6; session registry)
 │   ├── xep-0030-service-discovery.c  # XEP-0030: disco#info handler
 │   └── xep-0199-ping.c       # XEP-0199: ping handler
 ├── test_e2e/                 # End-to-end integration tests (shell scripts)
@@ -54,6 +56,7 @@
 │   ├── test_xmpp_sasl.c      # SASL PLAIN authentication unit tests
 │   ├── test_xmpp_starttls.c  # STARTTLS negotiation unit tests
 │   ├── test_xmpp_state.c     # XMPP state machine unit tests (protocol ordering)
+│   ├── xmpp_presence.c       # Presence routing unit tests (RFC 6121 §4.2/§4.4/§4.6)
 │   ├── xep-0030-service-discovery.c  # XEP-0030 disco#info integration tests
 │   └── xep-0199-ping.c       # XEP-0199 ping integration tests
 ├── third_party/              # Git-submodule third-party libraries

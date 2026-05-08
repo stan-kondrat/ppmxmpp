@@ -78,6 +78,7 @@ void simulate_starttls(xmpp_session_t* ctx) {
 }
 
 int feed_to_online(xmpp_session_t* ctx) {
+  memset(ctx, 0, sizeof(*ctx));
   xmpp_session_reset(ctx);
   g_write_len = 0;
 

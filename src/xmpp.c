@@ -1,5 +1,6 @@
 #include "xmpp.h"
 #include "xmpp_iq.h"
+#include "xmpp_presence.h"
 #include "xmpp_sasl.h"
 
 #include <fcntl.h>
@@ -782,12 +783,15 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     break;
   }
 
-  case XMPP_STATE_ONLINE:
-    /* Post-bind session: dispatch IQ stanzas via the IQ router. */
-    if (strcmp(xmpp_stanza_get_name(stanza), "iq") == 0) {
+  case XMPP_STATE_ONLINE: {
+    const char* sname = xmpp_stanza_get_name(stanza);
+    if (strcmp(sname, "iq") == 0) {
       xmpp_iq_dispatch(ctx, stanza);
+    } else if (strcmp(sname, "presence") == 0) {
+      xmpp_presence_handle(ctx, stanza);
     }
     break;
+  }
 
   default:
     stump_w("stream unexpected-stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id,
