@@ -77,6 +77,49 @@ void simulate_starttls(xmpp_session_t* ctx) {
   ctx->needs_parser_reset = 1;
 }
 
+int feed_to_online(xmpp_session_t* ctx) {
+  xmpp_session_reset(ctx);
+  g_write_len = 0;
+
+  char buf[512];
+  snprintf(buf, sizeof(buf),
+           "<?xml version='1.0'?>"
+           "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
+           " xmlns='jabber:client' to='localhost' version='1.0'>");
+  if (xmpp_feed(ctx, buf, strlen(buf), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_FEATURES_RECEIVED) return -1;
+
+  g_write_len = 0;
+  const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
+  if (xmpp_feed(ctx, starttls, strlen(starttls), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_STARTTLS_SENT) return -1;
+
+  g_write_len = 0;
+  const char* r1 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
+                   " xmlns='jabber:client' to='localhost' version='1.0'>";
+  if (xmpp_feed(ctx, r1, strlen(r1), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_FEATURES_RECEIVED_POST_TLS) return -1;
+
+  if (feed_sasl_plain(ctx, "", "testuser", "testpass") != 0) return -1;
+  if (ctx->state != XMPP_STATE_SASL_SUCCESS) return -1;
+
+  g_write_len = 0;
+  const char* r2 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
+                   " xmlns='jabber:client' to='localhost' version='1.0'>";
+  if (xmpp_feed(ctx, r2, strlen(r2), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_BOUND) return -1;
+
+  g_write_len = 0;
+  const char* bind = "<iq type='set' id='b1'>"
+                     "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
+                     "<resource>test</resource></bind></iq>";
+  if (xmpp_feed(ctx, bind, strlen(bind), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_ONLINE) return -1;
+
+  g_write_len = 0;
+  return 0;
+}
+
 int feed_sasl_plain(xmpp_session_t* ctx, const char* authzid, const char* authcid,
                     const char* passwd) {
   static const char b64_table[] =

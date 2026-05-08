@@ -706,59 +706,55 @@ static void test_db_path_configured(void** state) {
   storage_db_close();
 }
 
-/* ---------------------------------------------------------------------------
- * Main — register all tests
- * ------------------------------------------------------------------------ */
+static const struct CMUnitTest test_db_tests[] = {
+    /* Open / close tests. */
+    cmocka_unit_test_setup_teardown(test_db_open_creates_file, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_open_singleton, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_open_invalid_path, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_reopen_after_close, db_test_setup, db_test_teardown),
+
+    /* Prepare tests. */
+    cmocka_unit_test_setup_teardown(test_db_prepare_select, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_prepare_insert, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_prepare_update, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_prepare_cached, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_prepare_invalid_sql, db_test_setup, db_test_teardown),
+
+    /* Bind / step / column tests. */
+    cmocka_unit_test_setup_teardown(test_db_bind_text_insert, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_bind_text_select, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_bind_int64, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_column_text_copy, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_column_text_null, db_test_setup, db_test_teardown),
+
+    /* Reset tests. */
+    cmocka_unit_test_setup_teardown(test_db_reset_clears_bindings, db_test_setup, db_test_teardown),
+    cmocka_unit_test(test_db_reset_null),
+
+    /* Bind null tests. */
+    cmocka_unit_test_setup_teardown(test_db_bind_null, db_test_setup, db_test_teardown),
+    cmocka_unit_test(test_db_bind_null_stmt),
+
+    /* Column int64 tests. */
+    cmocka_unit_test(test_db_column_int64_null),
+    cmocka_unit_test_setup_teardown(test_db_column_int64_valid, db_test_setup, db_test_teardown),
+
+    /* Changes tests. */
+    cmocka_unit_test_setup_teardown(test_db_changes_insert, db_test_setup, db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_changes_update, db_test_setup, db_test_teardown),
+
+    /* Migration tests. */
+    cmocka_unit_test_setup_teardown(test_db_migration_creates_users_table, db_test_setup,
+                                    db_test_teardown),
+    cmocka_unit_test_setup_teardown(test_db_no_remigration, db_test_setup, db_test_teardown),
+
+    /* Null-safety tests. */
+    cmocka_unit_test(test_db_null_stmt_safety),
+
+    /* Setup/teardown group. */
+    cmocka_unit_test_setup_teardown(test_db_path_configured, db_test_setup, db_test_teardown),
+};
+
 int main(void) {
-  const struct CMUnitTest tests[] = {
-      /* Open / close tests. */
-      cmocka_unit_test_setup_teardown(test_db_open_creates_file, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_open_singleton, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_open_invalid_path, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_reopen_after_close, db_test_setup, db_test_teardown),
-
-      /* Prepare tests. */
-      cmocka_unit_test_setup_teardown(test_db_prepare_select, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_prepare_insert, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_prepare_update, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_prepare_cached, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_prepare_invalid_sql, db_test_setup, db_test_teardown),
-
-      /* Bind / step / column tests. */
-      cmocka_unit_test_setup_teardown(test_db_bind_text_insert, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_bind_text_select, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_bind_int64, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_column_text_copy, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_column_text_null, db_test_setup, db_test_teardown),
-
-      /* Reset tests. */
-      cmocka_unit_test_setup_teardown(test_db_reset_clears_bindings, db_test_setup,
-                                      db_test_teardown),
-      cmocka_unit_test(test_db_reset_null),
-
-      /* Bind null tests. */
-      cmocka_unit_test_setup_teardown(test_db_bind_null, db_test_setup, db_test_teardown),
-      cmocka_unit_test(test_db_bind_null_stmt),
-
-      /* Column int64 tests. */
-      cmocka_unit_test(test_db_column_int64_null),
-      cmocka_unit_test_setup_teardown(test_db_column_int64_valid, db_test_setup, db_test_teardown),
-
-      /* Changes tests. */
-      cmocka_unit_test_setup_teardown(test_db_changes_insert, db_test_setup, db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_changes_update, db_test_setup, db_test_teardown),
-
-      /* Migration tests. */
-      cmocka_unit_test_setup_teardown(test_db_migration_creates_users_table, db_test_setup,
-                                      db_test_teardown),
-      cmocka_unit_test_setup_teardown(test_db_no_remigration, db_test_setup, db_test_teardown),
-
-      /* Null-safety tests. */
-      cmocka_unit_test(test_db_null_stmt_safety),
-
-      /* Setup/teardown group. */
-      cmocka_unit_test_setup_teardown(test_db_path_configured, db_test_setup, db_test_teardown),
-  };
-
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(test_db_tests, NULL, NULL);
 }

@@ -116,7 +116,7 @@ static void test_xmpp_sasl_plain_bad_password(void** state) {
 
   rc = feed_sasl_plain(&ctx, "", "testuser", "wrongpass");
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_CLOSING);
+  assert_int_equal(ctx.state, XMPP_STATE_TLS_NEGOTIATED);
   assert_true(buf_contains("<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"));
   assert_true(buf_contains("<not-authorized/>"));
 
@@ -156,7 +156,7 @@ static void test_xmpp_sasl_plain_user_not_found(void** state) {
 
   rc = feed_sasl_plain(&ctx, "", "nonexistent", "anypass");
   assert_int_equal(rc, 0);
-  assert_int_equal(ctx.state, XMPP_STATE_CLOSING);
+  assert_int_equal(ctx.state, XMPP_STATE_TLS_NEGOTIATED);
   assert_true(buf_contains("<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"));
   assert_true(buf_contains("<not-authorized/>"));
 
@@ -296,7 +296,7 @@ static void test_xmpp_disabled_account(void** state) {
 
   g_write_len = 0;
   rc = feed_sasl_plain(&ctx, "", "testuser", "testpass");
-  assert_int_equal(rc, 0);
+  assert_int_equal(rc, -1);
   assert_int_equal(ctx.state, XMPP_STATE_CLOSING);
   assert_true(buf_contains("<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"));
   assert_true(buf_contains("<not-authorized/>"));
@@ -410,7 +410,7 @@ static void test_xmpp_sasl_authzid_mismatch(void** state) {
   assert_int_equal(xmpp_feed(&ctx, restart, strlen(restart), mock_write, NULL), 0);
 
   int rc = feed_sasl_plain(&ctx, "other@localhost", "testuser", "testpass");
-  assert_int_equal(rc, 0);
+  assert_int_equal(rc, -1);
   assert_int_equal(ctx.state, XMPP_STATE_CLOSING);
   assert_true(buf_contains("<not-authorized/>"));
 
@@ -440,7 +440,7 @@ static void test_xmpp_sasl_forbidden_localpart(void** state) {
   assert_int_equal(xmpp_feed(&ctx, restart, strlen(restart), mock_write, NULL), 0);
 
   int rc = feed_sasl_plain(&ctx, "", "user@name", "testpass");
-  assert_int_equal(rc, 0);
+  assert_int_equal(rc, -1);
   assert_int_equal(ctx.state, XMPP_STATE_CLOSING);
   assert_true(buf_contains("<not-authorized/>"));
 

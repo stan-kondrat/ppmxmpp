@@ -224,37 +224,34 @@ static void test_config_in_tmp_overwritten(void** state) {
   assert_string_equal(server_config.log_level, "TRACE");
 }
 
-/* ---------------------------------------------------------------------------
- * Main — register all tests
- * ------------------------------------------------------------------------ */
+static const struct CMUnitTest test_config_tests[] = {
+    /* Parse log level (no setup/teardown needed). */
+    cmocka_unit_test(test_parse_all_valid_levels),
+    cmocka_unit_test(test_parse_case_insensitive),
+    cmocka_unit_test(test_parse_invalid_level),
+
+    /* E2E config creation — no setup/teardown (uses global /tmp). */
+    cmocka_unit_test(test_config_created_with_nested_dir),
+
+    /* Tests with setup/teardown. */
+    cmocka_unit_test_setup_teardown(test_config_created_in_tmp_with_defaults, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_existing_config_log_level_read, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_existing_config_missing_key_uses_default, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_cli_arg_overrides_file, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_cli_arg_wins_no_file, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_invalid_log_level_in_file_fails, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_config_in_tmp_created, config_test_setup,
+                                    config_test_teardown),
+    cmocka_unit_test_setup_teardown(test_config_in_tmp_overwritten, config_test_setup,
+                                    config_test_teardown),
+};
+
 int main(void) {
-  const struct CMUnitTest tests[] = {
-      /* Parse log level (no setup/teardown needed). */
-      cmocka_unit_test(test_parse_all_valid_levels),
-      cmocka_unit_test(test_parse_case_insensitive),
-      cmocka_unit_test(test_parse_invalid_level),
-
-      /* E2E config creation — no setup/teardown (uses global /tmp). */
-      cmocka_unit_test(test_config_created_with_nested_dir),
-
-      /* Tests with setup/teardown. */
-      cmocka_unit_test_setup_teardown(test_config_created_in_tmp_with_defaults, config_test_setup,
-                                      config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_existing_config_log_level_read, config_test_setup,
-                                      config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_existing_config_missing_key_uses_default,
-                                      config_test_setup, config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_cli_arg_overrides_file, config_test_setup,
-                                      config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_cli_arg_wins_no_file, config_test_setup,
-                                      config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_invalid_log_level_in_file_fails, config_test_setup,
-                                      config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_config_in_tmp_created, config_test_setup,
-                                      config_test_teardown),
-      cmocka_unit_test_setup_teardown(test_config_in_tmp_overwritten, config_test_setup,
-                                      config_test_teardown),
-  };
-
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(test_config_tests, NULL, NULL);
 }

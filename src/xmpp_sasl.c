@@ -86,7 +86,7 @@ static int jid_localpart_has_forbidden(const char* s) {
 /*  SASL PLAIN authentication                                          */
 /* ------------------------------------------------------------------ */
 
-int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn write_fn, void* ud) {
+sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn write_fn, void* ud) {
   (void)write_fn;
   (void)ud;
 
@@ -94,7 +94,7 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
   size_t len = 0;
   if (b64_decode(b64_text, strlen(b64_text), &decoded, &len) != 0) {
     stump_er("SASL PLAIN: base64 decode failed");
-    return -1;
+    return -2;
   }
   const char* data = (const char*)decoded;
 
@@ -114,7 +114,7 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
   if (p == data) {
     stump_er("SASL PLAIN: malformed credentials (no NUL)");
     free(decoded);
-    return -1;
+    return -2;
   }
   size_t authzid_len = (size_t)(p - data) - 1; /* bytes before first NUL */
 
@@ -129,7 +129,7 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
   if (!authcid || p == data + len) {
     stump_er("SASL PLAIN: malformed credentials");
     free(decoded);
-    return -1;
+    return -2;
   }
   password = p;
 
@@ -137,14 +137,14 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
   if (strlen(authcid) == 0) {
     stump_er("SASL PLAIN: empty authcid");
     free(decoded);
-    return -1;
+    return -2;
   }
 
   /* RFC 7622 §3.3.1: reject forbidden localpart characters. */
   if (jid_localpart_has_forbidden(authcid)) {
     stump_er("SASL PLAIN: forbidden character in authcid");
     free(decoded);
-    return -1;
+    return -2;
   }
 
   int ac_len = (int)(strlen(authcid) < sizeof(ctx->authcid) - 1 ? strlen(authcid)
@@ -158,14 +158,14 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
   if (n < 0 || (size_t)n >= sizeof(bare_jid)) {
     stump_er("SASL PLAIN: JID too long");
     free(decoded);
-    return -1;
+    return -2;
   }
 
   sqlite3* db;
   if (storage_db_open(&db) != 0) {
     stump_er("SASL PLAIN: cannot open database");
     free(decoded);
-    return -1;
+    return SASL_TERMINAL;
   }
 
   storage_stmt_t* stmt = NULL;
@@ -173,7 +173,7 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
   if (storage_db_prepare(db, sql, &stmt) != 0) {
     stump_er("SASL PLAIN: prepare failed");
     storage_db_close();
-    return -1;
+    return SASL_TERMINAL;
   }
 
   storage_db_bind_text(stmt, 1, bare_jid);
@@ -193,7 +193,7 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
     stump_i("SASL PLAIN: account disabled: %s", bare_jid);
     free(stored_pw);
     storage_db_close();
-    return -1;
+    return -2;
   }
 
   /* password is not NUL-terminated — it occupies the tail of the decoded
@@ -218,7 +218,7 @@ int handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_write_fn w
     if (strcmp(authzid_str, bare_jid) != 0) {
       stump_i("SASL PLAIN: authzid mismatch: '%s' vs '%s'", authzid_str, bare_jid);
       storage_db_close();
-      return -1;
+      return -2;
     }
   }
 

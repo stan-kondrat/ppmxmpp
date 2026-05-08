@@ -27,4 +27,8 @@ int feed_sasl_plain(xmpp_session_t* ctx, const char* authzid, const char* authci
  * parser for reset (mirrors what server.c does after mbedtls_ssl_handshake). */
 void simulate_starttls(xmpp_session_t* ctx);
 
+/* Drive ctx through TLS + SASL + bind to XMPP_STATE_ONLINE using "testuser"/"testpass".
+ * Requires setup_test_db() to have been called first. Returns 0 on success, -1 on failure. */
+int feed_to_online(xmpp_session_t* ctx);
+
 #endif /* TEST_XMPP_HELPERS_H */

@@ -1,38 +1,14 @@
 #include "xmpp_iq.h"
 
-#include <stdarg.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "storage/roster.h"
 #include "strophe.h"
 #include "stumpless.h"
-
-/* ------------------------------------------------------------------ */
-/*  Write helpers local to this module                                 */
-/* ------------------------------------------------------------------ */
-
-#define IQ_BUF_SIZE 65536
-
-/* Append formatted text to buf[*len]; return 0 on success, -1 if full. */
-static int iq_append(char* buf, size_t* len, size_t cap, const char* fmt, ...)
-    __attribute__((format(printf, 4, 5)));
-static int iq_append(char* buf, size_t* len, size_t cap, const char* fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  int n = vsnprintf(buf + *len, cap - *len, fmt, ap);
-  va_end(ap);
-  if (n < 0 || (size_t)n >= cap - *len) {
-    return -1;
-  }
-  *len += (size_t)n;
-  return 0;
-}
-
-static int iq_flush(xmpp_session_t* ctx, const char* buf, size_t len) {
-  return ctx->write_fn(ctx->write_ud, buf, len);
-}
+#include "xep-0030-service-discovery.h"
+#include "xep-0199-ping.h"
+#include "xmpp_iq_buf.h"
 
 /* ------------------------------------------------------------------ */
 /*  Roster XML serialisation helpers                                   */
@@ -431,6 +407,21 @@ void xmpp_iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
       handle_roster_set(ctx, child, iq_id);
       return;
     }
+  }
+
+  /* XEP-0030: Service Discovery */
+  if (ns && strcmp(ns, "http://jabber.org/protocol/disco#info") == 0 &&
+      strcmp(iq_type, "get") == 0) {
+    const char* to = xmpp_stanza_get_attribute(stanza, "to");
+    const char* node = xmpp_stanza_get_attribute(child, "node");
+    xep0030_handle_disco_info(ctx, iq_id, to, node);
+    return;
+  }
+
+  /* XEP-0199: XMPP Ping */
+  if (ns && strcmp(ns, "urn:xmpp:ping") == 0 && strcmp(iq_type, "get") == 0) {
+    xep0199_handle_ping(ctx, iq_id);
+    return;
   }
 
   /* Unsupported or result/error from client — return feature-not-implemented
