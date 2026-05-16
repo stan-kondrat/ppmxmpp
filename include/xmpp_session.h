@@ -49,6 +49,9 @@ int xmpp_session_table_is_registered(const char* bound_jid);
  * setup/teardown to prevent stale pointers from leaking between tests. */
 void xmpp_session_table_reset_all(void);
 
+/* TEST USE ONLY — access session count. */
+extern int g_session_count;
+
 /* ------------------------------------------------------------------ */
 /*  Shared JID utility                                                 */
 /* ------------------------------------------------------------------ */

@@ -7,6 +7,7 @@
 #include "strophe.h"
 #include "stumpless.h"
 #include "xep-0160-offline-messages.h"
+#include "xep-0280-carbons.h"
 #include "xmpp_iq_buf.h"
 #include "xmpp_session.h"
 
@@ -76,6 +77,136 @@ static int build_message(char* buf, size_t* len, size_t cap, const char* from_ji
   return 0;
 }
 
+/* Check whether stanza contains <private xmlns='urn:xmpp:carbons:2'/> (XEP-0280 §9).
+ * Returns 1 if the private element is present, 0 otherwise. */
+static int msg_has_private(const xmpp_stanza_t* stanza) {
+  xmpp_stanza_t* child = xmpp_stanza_get_children((xmpp_stanza_t*)stanza);
+  while (child) {
+    const char* name = xmpp_stanza_get_name(child);
+    const char* ns = xmpp_stanza_get_ns(child);
+    if (name && strcmp(name, "private") == 0 && ns &&
+        strcmp(ns, "urn:xmpp:carbons:2") == 0) {
+      return 1;
+    }
+    child = xmpp_stanza_get_next(child);
+  }
+  return 0;
+}
+
+/* Carbons copy data passed to the iterator callback. */
+typedef struct {
+  const char* sender_bare;      /* bare JID of the user whose messages are carbon-copied */
+  const char* orig_from;         /* from= of the original stanza */
+  const char* orig_to;           /* to= of the original stanza */
+  const char* orig_type;         /* type= of the original stanza */
+  const char* orig_id;           /* id= of the original stanza */
+  const char* orig_body;         /* body text of the original stanza */
+  const char* carbon_dir;        /* "sent" or "received" */
+} carbon_copy_ctx_t;
+
+/* Send one XEP-0297 carbon copy to a single resource.
+ * Called by xmpp_session_table_for_each_carbon_resource. */
+static void send_carbon_copy(const char* full_jid, xmpp_write_fn write_fn, void* write_ud,
+                             const void* ud) {
+  const carbon_copy_ctx_t* cc = (const carbon_copy_ctx_t*)ud;
+  stump_d("carbons: callback for %s dir=%s from=%s", full_jid, cc->carbon_dir, cc->orig_from);
+
+  /* Build XEP-0297 forwarded wrapper (XEP-0280 §4/§5):
+   * <message from='sender_bare' to='full_jid'>
+   *   <sent|received xmlns='urn:xmpp:carbons:2'>
+   *     <forwarded xmlns='urn:xmpp:forward:0'>
+   *       <original-stanza .../>
+   *     </forwarded>
+   *   </sent|received>
+   * </message> */
+  char buf[4096];
+  size_t len = 0;
+
+  /* Wrapper: from=sender_bare (XEP-0280 mandates this), to=full_jid,
+   * type mirrors original (XEP-0280 §4/§5 recommendation). */
+  if (cc->orig_type && cc->orig_type[0]) {
+    iq_append(buf, &len, sizeof(buf),
+              "<message from='%s' to='%s' type='%s'>"
+              "<%s xmlns='urn:xmpp:carbons:2'>"
+              "<forwarded xmlns='urn:xmpp:forward:0'>"
+              "<message xmlns='jabber:client'",
+              cc->sender_bare, full_jid, cc->orig_type, cc->carbon_dir);
+  } else {
+    iq_append(buf, &len, sizeof(buf),
+              "<message from='%s' to='%s'>"
+              "<%s xmlns='urn:xmpp:carbons:2'>"
+              "<forwarded xmlns='urn:xmpp:forward:0'>"
+              "<message xmlns='jabber:client'",
+              cc->sender_bare, full_jid, cc->carbon_dir);
+  }
+
+  /* Original stanza attributes. */
+  iq_append(buf, &len, sizeof(buf), " from='%s' to='%s'", cc->orig_from, cc->orig_to);
+  if (cc->orig_type && cc->orig_type[0]) {
+    iq_append(buf, &len, sizeof(buf), " type='%s'", cc->orig_type);
+  }
+  if (cc->orig_id && cc->orig_id[0]) {
+    iq_append(buf, &len, sizeof(buf), " id='%s'", cc->orig_id);
+  }
+  iq_append(buf, &len, sizeof(buf), ">");
+
+  /* Original body (and any other child elements could be added here). */
+  if (cc->orig_body && cc->orig_body[0]) {
+    iq_append(buf, &len, sizeof(buf), "<body>%s</body>", cc->orig_body);
+  }
+
+  iq_append(buf, &len, sizeof(buf),
+            "</message>"
+            "</forwarded>"
+            "</%s>"
+            "</message>",
+            cc->carbon_dir);
+
+  write_fn(write_ud, buf, len);
+  stump_d("carbons: sent %s carbon to %s (%zu bytes)", cc->carbon_dir, full_jid, (size_t)len);
+}
+
+/* Send carbons <sent/> copies to all other carbons-enabled resources of the
+ * sender, excluding the sending resource itself.
+ * Also sends a <sent/> to the sending resource itself (the sending device's
+ * own sent-copy, which RFC 6121 §8 does not deliver to the sender). */
+static void send_carbon_sent(const char* sender_bare, const char* exclude_full_jid,
+                              const char* orig_from, const char* orig_to,
+                              const char* orig_type, const char* orig_id,
+                              const char* orig_body) {
+  carbon_copy_ctx_t cc = {
+      .sender_bare = sender_bare,
+      .orig_from = orig_from,
+      .orig_to = orig_to,
+      .orig_type = orig_type,
+      .orig_id = orig_id,
+      .orig_body = orig_body,
+      .carbon_dir = "sent",
+  };
+  xmpp_session_table_for_each_carbon_resource(sender_bare, exclude_full_jid, send_carbon_copy, &cc);
+  stump_d("carbons: sent dispatch for %s (from=%s)", sender_bare, orig_from);
+}
+
+/* Send carbons <received/> copies to all other carbons-enabled resources of the
+ * recipient, excluding the receiving resource (which already received the
+ * original stanza via RFC 6121 routing). */
+static void send_carbon_received(const char* recipient_bare, const char* exclude_full_jid,
+                                  const char* orig_from, const char* orig_to,
+                                  const char* orig_type, const char* orig_id,
+                                  const char* orig_body) {
+  carbon_copy_ctx_t cc = {
+      .sender_bare = recipient_bare,
+      .orig_from = orig_from,
+      .orig_to = orig_to,
+      .orig_type = orig_type,
+      .orig_id = orig_id,
+      .orig_body = orig_body,
+      .carbon_dir = "received",
+  };
+  xmpp_session_table_for_each_carbon_resource(recipient_bare, exclude_full_jid,
+                                              send_carbon_copy, &cc);
+}
+
 /* Send a stanza-level error back to the sender. */
 static void send_message_error(xmpp_session_t* ctx, const char* to_attr, const char* msg_id,
                                const char* error_type, const char* condition_ns,
@@ -131,6 +262,9 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     return;
   }
 
+  /* Check XEP-0280 §9: <private xmlns='urn:xmpp:carbons:2'/> → exclude from carbons. */
+  int is_private = msg_has_private(stanza);
+
   /* Extract <body> text (allocated by libstrophe — must free). */
   xmpp_stanza_t* body_el = xmpp_stanza_get_child_by_name(stanza, "body");
   char* body_text = body_el ? xmpp_stanza_get_text(body_el) : NULL;
@@ -148,6 +282,13 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
                       body_text) == 0) {
       if (xmpp_session_table_write(to_attr, fwd, fwd_len) == 0) {
         xmpp_session_table_touch(ctx->bound_jid);
+        /* RFC 6121 delivered to the target full JID resource.
+         * Carbons: send <received/> copies to all OTHER carbons-enabled
+         * resources of the recipient (to_bare). */
+        if (!is_private) {
+          send_carbon_received(to_bare, to_attr, ctx->bound_jid, to_attr,
+                               msg_type, msg_id, body_text);
+        }
         free(body_text);
         return;
       }
@@ -161,11 +302,18 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   msg_bare_jid(ctx->bound_jid, sender_bare, sizeof(sender_bare));
 
   if (strcmp(to_bare, sender_bare) == 0) {
-    /* Self-addressed: deliver to all other resources of this user. */
+    /* Self-addressed: deliver to all other resources of this user (RFC 6121 §8).
+     * Carbons <sent/>: also send a <sent/> copy to ALL carbons-enabled
+     * resources of the sender (including this one), so every device
+     * receives the sent-carbon wrapper per XEP-0280 §5. */
     if (build_message(fwd, &fwd_len, sizeof(fwd), ctx->bound_jid, to_bare, msg_type, msg_id,
                       body_text) == 0) {
       xmpp_session_table_broadcast_except(sender_bare, ctx->bound_jid, fwd, fwd_len);
       xmpp_session_table_touch(ctx->bound_jid);
+      if (!is_private) {
+        send_carbon_sent(sender_bare, ctx->bound_jid, ctx->bound_jid, to_bare,
+                         msg_type, msg_id, body_text);
+      }
     }
   } else {
     /* Normal bare-JID routing: pick best resource. */
@@ -175,14 +323,29 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
                         body_text) == 0) {
         xmpp_session_table_write(best_jid, fwd, fwd_len);
         xmpp_session_table_touch(ctx->bound_jid);
+        /* RFC 6121 delivered to best_jid.
+         * Carbons: send <sent/> to all OTHER carbons-enabled resources of sender,
+         * and <received/> to all OTHER carbons-enabled resources of recipient. */
+        if (!is_private) {
+          send_carbon_sent(sender_bare, ctx->bound_jid, ctx->bound_jid, to_attr,
+                           msg_type, msg_id, body_text);
+          send_carbon_received(to_bare, best_jid, ctx->bound_jid, to_attr,
+                               msg_type, msg_id, body_text);
+        }
       }
     } else {
-      /* No online resource: store for offline delivery (XEP-0160). */
+      /* No online resource: store for offline delivery (XEP-0160).
+       * Carbons: only send <sent/> carbon copies (no recipient is online,
+       * so no <received/> copies apply). */
       stump_d("message: %s is offline, storing for later delivery", to_bare);
       if (build_message(fwd, &fwd_len, sizeof(fwd), ctx->bound_jid, to_bare, msg_type, msg_id,
                         body_text) == 0) {
         xep0160_store(ctx, to_bare, msg_id, fwd, fwd_len);
         xmpp_session_table_touch(ctx->bound_jid);
+        if (!is_private) {
+          send_carbon_sent(sender_bare, ctx->bound_jid, ctx->bound_jid, to_bare,
+                           msg_type, msg_id, body_text);
+        }
       }
     }
   }

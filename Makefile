@@ -88,7 +88,8 @@ LDFLAGS     ?=
 # ---------------------------------------------------------------------------
 # Project sources
 # ---------------------------------------------------------------------------
-SRCS        := $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/storage/*.c)
+SRCS        := $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/storage/*.c) \
+              $(SRCDIR)/xep-0280-carbons.c
 OBJS        := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 # Embed default config as a C string literal, rebuilt when the file changes
@@ -281,7 +282,25 @@ E2E_TESTS := $(filter-out test_e2e/_%.sh,$(E2E_TESTS))
 
 .PHONY: test-e2e
 test-e2e: $(E2E_TESTS)
-	@for t in $(E2E_TESTS); do echo "--- $$t ---"; bash $$t; done
+	@total=0; passed=0; failed=0; failed_suites=""; \
+	for t in $(E2E_TESTS); do \
+		total=$$((total + 1)); \
+		echo "--- $$t ---"; \
+		if bash $$t; then \
+			passed=$$((passed + 1)); \
+		else \
+			failed=$$((failed + 1)); \
+			failed_suites="$$failed_suites $$t"; \
+		fi; \
+	done; \
+	echo "========================================"; \
+	echo "  Total: $$total  Passed: $$passed  Failed: $$failed"; \
+	echo "========================================"; \
+	if [ -n "$$failed_suites" ]; then \
+		echo "Failed suites:"; \
+		for s in $$failed_suites; do echo "  $$s"; done; \
+		exit 1; \
+	fi
 
 # ---------------------------------------------------------------------------
 # Aggregate third-party target
@@ -306,7 +325,7 @@ third-party: $(THIRDPARTY_STAMPS)
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
 TEST_BINS   := $(patsubst $(TESTDIR)/%.c,$(BUILDDIR)/%,$(TEST_SRCS))
-TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message $(BUILDDIR)/test_xmpp_helpers,$(TEST_BINS))
+TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message $(BUILDDIR)/test_xmpp_helpers,$(TEST_BINS))
 
 # Objects shared between tests and the main binary (everything except main.o)
 LIB_OBJS    := $(filter-out $(BUILDDIR)/main.o,$(OBJS))
@@ -368,11 +387,16 @@ $(BUILDDIR)/xep-0199-ping: $(TESTDIR)/xep-0199-ping.c $(TESTDIR)/test_xmpp_helpe
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
 	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
+$(BUILDDIR)/xep-0280-carbons: $(TESTDIR)/xep-0280-carbons.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+
 $(BUILDDIR)/xmpp_presence: $(TESTDIR)/xmpp_presence.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
 	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
 $(BUILDDIR)/test_offline: $(TESTDIR)/test_offline.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+
 $(BUILDDIR)/xmpp_message: $(TESTDIR)/xmpp_message.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
 	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
@@ -422,8 +446,28 @@ clean:
 distclean: clean
 	rm -f $(SQLITE_STAMP)
 
-test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message
-	@for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message; do echo "--- $$t ---"; $$t; done
+test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message
+	@total=0; passed=0; failed=0; failed_suites=""; \
+	for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message; do \
+		echo "--- $$t ---"; \
+		out=$$($$t 2>&1); echo "$$out"; \
+		t_total=$$(echo "$$out" | grep -oE '[0-9]+ test\(s\) run'  | grep -oE '[0-9]+' | tail -1); \
+		t_pass=$$(echo  "$$out" | grep '\[  PASSED  \]' | grep -oE '[0-9]+' | head -1); \
+		t_fail=$$(echo  "$$out" | grep '\[  FAILED  \]' | grep -oE '[0-9]+' | head -1); \
+		total=$$((total + $${t_total:-0})); \
+		passed=$$((passed + $${t_pass:-0})); \
+		failed=$$((failed + $${t_fail:-0})); \
+		[ "$${t_fail:-0}" -gt 0 ] && failed_suites="$$failed_suites $$t"; \
+	done; \
+	echo ""; \
+	echo "========================================"; \
+	echo "  Total: $$total  Passed: $$passed  Failed: $$failed"; \
+	echo "========================================"; \
+	if [ -n "$$failed_suites" ]; then \
+		echo "Failed suites:"; \
+		for s in $$failed_suites; do echo "  $$s"; done; \
+		exit 1; \
+	fi
 
 format:
 	@echo "Formatting source files..."

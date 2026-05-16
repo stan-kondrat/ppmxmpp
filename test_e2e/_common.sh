@@ -48,6 +48,13 @@ cleanup() {
         fi
         rm -f "$PIDFILE"
     fi
+    # Kill any screen sessions started by this test run (named ppmxmpp_*_$$).
+    local screens
+    screens=$(screen -ls 2>/dev/null | grep -oE "[0-9]+\.ppmxmpp_[^[:space:]]+_$$" 2>/dev/null || true)
+    if [ -n "$screens" ]; then
+        while IFS= read -r s; do screen -S "$s" -X quit 2>/dev/null || true; done <<< "$screens"
+    fi
+    screen -wipe 2>/dev/null 1>/dev/null || true
     if [ "$DEBUG" = true ]; then
         log "Debug mode: temp dir preserved at $TEST_DIR"
         log "Press Enter to remove temp dir and exit..."
@@ -135,7 +142,7 @@ wait_for_port() {
 # Returns 0 (success) if PATTERN is found in FILE, 1 otherwise.
 grep_log() {
     local file="$1"; local pattern="$2"
-    grep -qE "$pattern" "$file" 2>/dev/null
+    grep -qaE "$pattern" "$file" 2>/dev/null
 }
 
 # wait_for_pattern FILE PATTERN TIMEOUT_SEC

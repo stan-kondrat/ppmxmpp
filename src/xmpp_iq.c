@@ -8,6 +8,7 @@
 #include "stumpless.h"
 #include "xep-0030-service-discovery.h"
 #include "xep-0199-ping.h"
+#include "xep-0280-carbons.h"
 #include "xmpp_iq_buf.h"
 
 /* ------------------------------------------------------------------ */
@@ -442,8 +443,21 @@ void xmpp_iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     return;
   }
 
-  /* XEP-0280: Message Carbons — acknowledge enable/disable without delivering */
+  /* XEP-0280: Message Carbons — enable/disable per-resource */
   if (ns && strcmp(ns, "urn:xmpp:carbons:2") == 0 && strcmp(iq_type, "set") == 0) {
+    /* Find the <enable/> or <disable/> child element. */
+    xmpp_stanza_t* child_el = xmpp_stanza_get_children(stanza);
+    while (child_el) {
+      const char* cname = xmpp_stanza_get_name(child_el);
+      if (cname && (strcmp(cname, "enable") == 0 || strcmp(cname, "disable") == 0)) {
+        int enable = (strcmp(cname, "enable") == 0);
+        ctx->carbons_enabled = enable;
+        xmpp_session_table_update_carbons(ctx->bound_jid, enable);
+        stump_d("carbons iq: %s for %s", enable ? "enable" : "disable", ctx->bound_jid);
+        break;
+      }
+      child_el = xmpp_stanza_get_next(child_el);
+    }
     if (iq_id) {
       char buf[128];
       size_t len = 0;

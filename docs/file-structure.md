@@ -29,7 +29,8 @@
 │   ├── xmpp_session.h        # XMPP session state header
 │   ├── xep-0030-service-discovery.h  # XEP-0030 disco#info handler header
 │   ├── xep-0160-offline-messages.h  # XEP-0160 offline message storage handler header
-│   └── xep-0199-ping.h       # XEP-0199 ping handler header
+│   ├── xep-0199-ping.h       # XEP-0199 ping handler header
+│   └── xep-0280-carbons.h    # XEP-0280 message carbons enable/disable + carbon dispatch header
 ├── scripts/                  # Utility scripts
 ├── src/
 │   ├── main.c                # Application entry point
@@ -50,7 +51,8 @@
 │   ├── xmpp_session.c        # XMPP session state management
 │   ├── xep-0030-service-discovery.c  # XEP-0030: disco#info handler
 │   ├── xep-0160-offline-messages.c  # XEP-0160: offline message store + cap error
-│   └── xep-0199-ping.c       # XEP-0199: ping handler
+│   ├── xep-0199-ping.c       # XEP-0199: ping handler
+│   └── xep-0280-carbons.c    # XEP-0280: per-resource carbons opt-in + <sent>/<received> dispatch
 ├── test_e2e/                 # End-to-end integration tests (shell scripts)
 │   ├── _common.sh            # Shared test helpers (sourced by every test)
 │   ├── _helpers_profanity.sh # Helpers for profanity-based E2E tests
@@ -65,6 +67,7 @@
 │   ├── profanity_bind.sh     # E2E: profanity binds a resource; verifies full JID in result
 │   ├── profanity_connect.sh  # E2E: profanity authenticates and reaches ONLINE state
 │   ├── sasl_auth_failure_cap.sh # E2E: three bad passwords close stream with <policy-violation/>
+│   ├── message_carbons.sh    # E2E: XEP-0280 carbons — multi-device <sent>/<received> copies
 │   ├── tls_auto_generation.sh # E2E: server auto-generates self-signed cert
 │   └── tls_connection.sh     # E2E: server loads external cert, openssl s_client connects
 ├── tests/                    # Unit tests (C, using cmocka)
@@ -81,6 +84,7 @@
 │   ├── test_xmpp_state.c     # XMPP state machine unit tests (protocol ordering)
 │   ├── xep-0030-service-discovery.c  # XEP-0030 disco#info integration tests
 │   ├── xep-0199-ping.c       # XEP-0199 ping integration tests
+│   ├── xep-0280-carbons.c    # XEP-0280 carbons unit tests (enable/disable, sent/received dispatch)
 │   ├── xmpp_message.c        # Message routing unit tests
 │   └── xmpp_presence.c       # Presence routing unit tests (RFC 6121 §4.2/§4.4/§4.6)
 ├── third_party/              # Git-submodule third-party libraries

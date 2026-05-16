@@ -55,6 +55,8 @@ int setup_test_db(const char** db_path_out) {
 
   /* Also seed testuser@example.com used by some state tests. */
   (void)storage_users_create("testuser@example.com", "testpass");
+  /* Seed bob@localhost used by carbons and message routing tests. */
+  (void)storage_users_create("bob@localhost", "testpass");
 
   storage_db_close();
 

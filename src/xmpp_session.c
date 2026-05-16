@@ -19,10 +19,11 @@ typedef struct {
   void* write_ud;
   int priority;         /* <presence><priority> value, default 0 */
   uint64_t last_active; /* monotonic nanoseconds; updated on register and activity */
+  int carbons_enabled;  /* XEP-0280 carbons opt-in for this resource */
 } session_entry_t;
 
-static session_entry_t g_sessions[SESSION_TABLE_CAP];
-static int g_session_count = 0;
+session_entry_t g_sessions[SESSION_TABLE_CAP];
+int g_session_count = 0;
 
 /* ------------------------------------------------------------------ */
 /*  Internal helpers                                                   */
@@ -58,6 +59,7 @@ void xmpp_session_table_register(xmpp_session_t* ctx, xmpp_write_fn write_fn, vo
       g_sessions[i].write_fn = write_fn;
       g_sessions[i].write_ud = write_ud;
       g_sessions[i].last_active = now;
+      g_sessions[i].carbons_enabled = ctx->carbons_enabled;
       return;
     }
   }
@@ -68,12 +70,12 @@ void xmpp_session_table_register(xmpp_session_t* ctx, xmpp_write_fn write_fn, vo
   }
 
   session_entry_t* e = &g_sessions[g_session_count++];
+  memset(e, 0, sizeof(*e));
   strncpy(e->bound_jid, ctx->bound_jid, sizeof(e->bound_jid) - 1);
-  e->bound_jid[sizeof(e->bound_jid) - 1] = '\0';
   e->write_fn = write_fn;
   e->write_ud = write_ud;
-  e->priority = 0;
   e->last_active = now;
+  e->carbons_enabled = ctx->carbons_enabled;
   stump_d("session: registered %s (%d sessions)", e->bound_jid, g_session_count);
 
   /* Drain offline messages for this user (XEP-0160). */

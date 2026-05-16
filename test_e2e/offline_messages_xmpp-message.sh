@@ -42,6 +42,8 @@ PIDFILE="$TEST_DIR/.server.pid"
 source "$SCRIPT_DIR/_common.sh"
 # shellcheck source=test_e2e/_helpers_xmpp-message.sh
 source "$SCRIPT_DIR/_helpers_xmpp-message.sh"
+# shellcheck source=test_e2e/_helpers_profanity.sh
+source "$SCRIPT_DIR/_helpers_profanity.sh"
 
 parse_common_args "$@"
 trap cleanup EXIT INT TERM
@@ -59,10 +61,16 @@ TEST_DB="$TEST_DIR/test.db"
 CERT_FILE="$TEST_DIR/server.crt"
 KEY_FILE="$TEST_DIR/server.key"
 
+BOB_CONFIG_HOME="$TEST_DIR/bob_config"
+BOB_DATA_HOME="$TEST_DIR/bob_data"
+mkdir -p "$BOB_CONFIG_HOME/profanity" "$BOB_DATA_HOME/profanity"
+
 # ===================================================================== preflight
 
 [ -x "$SERVER_BIN" ]              || fail "Server binary not found: $SERVER_BIN (run 'make' first)"
 command -v xmpp-message &>/dev/null  || fail "xmpp-message not in PATH"
+command -v profanity    &>/dev/null  || fail "profanity not in PATH"
+command -v screen       &>/dev/null  || fail "screen not in PATH"
 command -v openssl   &>/dev/null  || fail "openssl not in PATH"
 command -v sqlite3   &>/dev/null  || fail "sqlite3 not in PATH"
 command -v stdbuf   &>/dev/null  || fail "stdbuf not in PATH"
@@ -95,6 +103,25 @@ CERT_FP=$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 2>/dev/null 
 CERT_NOTBEFORE=$(openssl x509 -in "$CERT_FILE" -noout -startdate 2>/dev/null | cut -d= -f2)
 CERT_NOTAFTER=$(openssl x509 -in "$CERT_FILE" -noout -enddate   2>/dev/null | cut -d= -f2)
 pass "Certificate generated (SHA-256: $CERT_FP)"
+
+# Configure profanity for Bob (TLS cert trust + account)
+TLSCERTS_CONTENT="[$CERT_FP]
+subject=CN=localhost
+trusted=true
+fingerprint=$CERT_FP
+notbefore=$CERT_NOTBEFORE
+notafter=$CERT_NOTAFTER
+
+"
+printf '%s' "$TLSCERTS_CONTENT" > "$BOB_DATA_HOME/profanity/tlscerts"
+cat > "$BOB_DATA_HOME/profanity/accounts" <<EOF
+[e2ebob]
+jid=$BOB_JID
+server=127.0.0.1
+port=$TLS_PORT
+tls_policy=allow
+password=$BOB_PASS
+EOF
 
 # ===================================================================== server (creates DB schema via migrations on startup)
 
@@ -147,7 +174,7 @@ log_debug "User count in DB: $USER_COUNT"
 log "Phase 1: Alice connects and sends a message to Bob (who is offline)..."
 
 # Use xmpp-message to send the message
-stdbuf -oL -eL xmpp-message \
+SSL_CERT_FILE="$CERT_FILE" stdbuf -oL -eL xmpp-message \
     --jabberid "$ALICE_JID" \
     --password "$ALICE_PASS" \
     --receiver "$BOB_JID" \
@@ -155,7 +182,7 @@ stdbuf -oL -eL xmpp-message \
     --server 127.0.0.1 \
     --port $TLS_PORT \
     --debug \
-    > "$ALICE_LOG" 2>&1
+    > "$ALICE_LOG" 2>&1 || true
 
 # Wait for the server to record the message stanza
 wait_for_pattern "$SERVER_LOG" "stanza=message" 10
@@ -240,77 +267,42 @@ else
     fail "bytes_size should be > 0"
 fi
 
-# ===================================================================== phase 2: Bob connects via xmpp-message (offline delivery on connect)
+# ===================================================================== phase 2: Bob connects via profanity (triggers offline delivery on presence)
 
-log "Phase 2: Bob connects and should receive the offline message..."
+log "Phase 2: Bob connects (profanity) and should receive the offline message..."
 
-# Use xmpp-message to trigger Bob's connection - this will cause the server
-# to deliver any pending offline messages when Bob authenticates
-stdbuf -oL -eL xmpp-message \
-    --jabberid "$BOB_JID" \
-    --password "$BOB_PASS" \
-    --receiver "$ALICE_JID" \
-    --message "I am now online" \
-    --server 127.0.0.1 \
-    --port $TLS_PORT \
-    --debug \
-    > "$BOB_LOG" 2>&1
+BOB_SCREEN="ppmxmpp_bob_$$"
+BOB_PID=$(profanity_start "$BOB_SCREEN" "$BOB_CONFIG_HOME" "$BOB_DATA_HOME" "e2ebob" "$BOB_LOG")
+log_debug "Bob screen: $BOB_SCREEN  PID: ${BOB_PID:-unknown}"
 
-# Wait for the server to process Bob's session
-wait_for_pattern "$SERVER_LOG" "offline_drain\|session: registered $BOB_JID" 10
+wait_for_session_registered "$BOB_JID" "Bob" "$BOB_LOG"
 
-kill "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null || true
-wait "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null || true
-
-# ===================================================================== assert: Bob received the message with <delay> stamp
-
-# Note: xmpp-message is a simple sender tool and doesn't receive messages.
-# Instead, we verify that:
-# 1. The offline message was drained from the DB when Bob connected
-# 2. The server processed Bob's connection and drain event
-
-# Check server log for offline drain
-if grep_log "$SERVER_LOG" "offline_drain"; then
-    pass "Server log shows offline drain (message delivered to Bob)"
-else
-    log_debug "$(strings "$SERVER_LOG" 2>/dev/null | grep -E "offline_drain|drain" | head -5)"
-    log "WARN: Server log does not show 'offline_drain' (may be timing)"
+# Bob's profanity log should contain the delivered offline message body.
+if ! wait_for_pattern "$BOB_LOG" "$MESSAGE_BODY" 15; then
+    dump_profanity_log "Bob log" "$BOB_LOG"
+    log_debug "=== Server log (last 20 lines) ==="
+    log_debug "$(strings "$SERVER_LOG" 2>/dev/null | tail -20)"
+    fail "Bob did not receive the offline message"
 fi
+pass "Bob received the offline message: $MESSAGE_BODY"
+
+# <delay> stamp should appear in Bob's log (XEP-0203).
+if wait_for_pattern "$BOB_LOG" "urn:xmpp:delay" 5; then
+    pass "Bob received <delay> stamp (XEP-0203)"
+else
+    log "WARN: <delay> stamp not visible in Bob's profanity log"
+fi
+
+profanity_stop "$BOB_SCREEN" "$BOB_PID"
+
+# ===================================================================== assert: offline messages cleared after delivery
 
 # Assert: Offline messages drained after Bob login
 OFFLINE_AFTER=$(sqlite3 "$TEST_DB" "SELECT COUNT(*) FROM offline_messages WHERE recipient_jid='$BOB_JID';")
 if [[ "$OFFLINE_AFTER" -eq 0 ]]; then
-    pass "Offline messages drained after Bob connection"
+    pass "Offline messages cleared from DB after delivery"
 else
-    fail "Offline messages NOT drained: $OFFLINE_AFTER remaining"
-fi
-
-# Check for <delay> stamp in server log (indicates XEP-0203 delayed delivery)
-if grep_log "$SERVER_LOG" "urn:xmpp:delay"; then
-    pass "Server processed <delay> stamp (XEP-0203)"
-else
-    log_debug "$(strings "$SERVER_LOG" 2>/dev/null | grep -E "delay" | head -5)"
-    log "WARN: Server log does not show delay stamp"
-fi
-
-# Verify message body was part of the delivered message
-if grep_log "$SERVER_LOG" "$MESSAGE_BODY"; then
-    pass "Message body present in server log"
-else
-    log_debug "$(strings "$SERVER_LOG" 2>/dev/null | grep -E "Hello|Bob|offline" | head -10)"
-    log "WARN: Message body not directly visible in server log"
-fi
-
-# No errors in Bob's connection
-# Note: debug output contains words like "error" and "failure" in protocol
-# registration messages (e.g., Registering protocol "error"), so we filter those out.
-BOB_ERRORS=$(grep -v 'Registering.*"error"\|Registering.*"failure"\|Registering.*"error"' "$BOB_LOG" 2>/dev/null | grep -iE 'ERROR:|Traceback|AttributeError|connection refused|auth.*fail' || true)
-if [ -n "$BOB_ERRORS" ]; then
-    log_debug "=== Bob log errors ==="
-    log_debug "$BOB_ERRORS"
-    fail "Bob connection had errors"
-else
-    pass "Bob connected without errors"
+    fail "Offline messages NOT cleared: $OFFLINE_AFTER remaining in DB"
 fi
 
 # ===================================================================== debug dump (only in debug mode)

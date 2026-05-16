@@ -10,6 +10,8 @@
 
 static const char* server_features[] = {
     "urn:xmpp:ping",
+    "urn:xmpp:carbons:2",
+    "urn:xmpp:forward:0",
     "http://jabber.org/protocol/disco#info",
     "http://jabber.org/protocol/disco#items",
     "jabber:iq:roster",

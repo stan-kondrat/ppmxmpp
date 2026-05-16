@@ -109,7 +109,7 @@ profanity_stop() {
         kill "$pid" 2>/dev/null || true
         wait "$pid" 2>/dev/null || true
     fi
-    screen -wipe 2>/dev/null || true
+    screen -wipe 2>/dev/null 1>/dev/null || true
 }
 
 # dump_profanity_log LABEL LOG_FILE

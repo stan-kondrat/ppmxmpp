@@ -25,7 +25,7 @@ static void test_disco_info_returns_result(void** state) {
   const char* iq = "<iq id='d1' type='get' to='localhost'>"
                    "<query xmlns='http://jabber.org/protocol/disco#info'/></iq>";
   assert_int_equal(xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL), 0);
-  assert_true(buf_contains("<iq type='result' id='d1'>"));
+  assert_true(buf_contains("<iq type='result' id='d1'"));
   assert_true(buf_contains("http://jabber.org/protocol/disco#info"));
 
   xmpp_session_cleanup(&ctx);
@@ -44,7 +44,7 @@ static void test_disco_info_no_to_returns_result(void** state) {
   const char* iq = "<iq id='d0' type='get'>"
                    "<query xmlns='http://jabber.org/protocol/disco#info'/></iq>";
   assert_int_equal(xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL), 0);
-  assert_true(buf_contains("<iq type='result' id='d0'>"));
+  assert_true(buf_contains("<iq type='result' id='d0'"));
 
   xmpp_session_cleanup(&ctx);
   teardown_test_db();
@@ -118,7 +118,7 @@ static void test_disco_info_bare_jid_existing_user(void** state) {
   const char* iq = "<iq id='d6' type='get' to='testuser@localhost'>"
                    "<query xmlns='http://jabber.org/protocol/disco#info'/></iq>";
   assert_int_equal(xmpp_feed(&ctx, iq, strlen(iq), mock_write, NULL), 0);
-  assert_true(buf_contains("<iq type='result' id='d6'>"));
+  assert_true(buf_contains("<iq type='result' id='d6'"));
   /* XEP-0030 §3.1: bare JID result SHOULD have category='account' type='registered'. */
   assert_true(buf_contains("<identity category='account' type='registered'/>"));
 

@@ -85,6 +85,7 @@ typedef struct {
   size_t out_len;
   char client_ns[256]; /* default namespace from xmlns='' in <stream:stream> */
   char stream_ns[256]; /* stream namespace from xmlns:stream='' in <stream:stream> */
+  int carbons_enabled; /* XEP-0280: set by IQ enable before presence registration */
 } xmpp_session_t;
 
 /* Feed received bytes into the XMPP state machine.
