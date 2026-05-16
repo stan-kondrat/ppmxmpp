@@ -16,9 +16,11 @@ int storage_roster_list(const char* owner_jid, storage_roster_item_cb cb, void* 
   int rc;
 
   if (!owner_jid || !cb) {
+    stump_er("roster list: invalid arguments");
     return -1;
   }
   if (storage_db_open(&db) != 0) {
+    stump_er("roster list: cannot open database");
     return -1;
   }
 
@@ -27,6 +29,7 @@ int storage_roster_list(const char* owner_jid, storage_roster_item_cb cb, void* 
                           " FROM roster WHERE owner_jid = ?",
                           &stmt);
   if (rc != 0) {
+    stump_er("roster list: prepare failed for '%s'", owner_jid);
     return -1;
   }
 
@@ -82,9 +85,11 @@ int storage_roster_get(const char* owner_jid, const char* contact_jid,
   int rc;
 
   if (!owner_jid || !contact_jid || !item_out) {
+    stump_er("roster get: invalid arguments");
     return -1;
   }
   if (storage_db_open(&db) != 0) {
+    stump_er("roster get: cannot open database");
     return -1;
   }
 
@@ -93,6 +98,7 @@ int storage_roster_get(const char* owner_jid, const char* contact_jid,
                           " FROM roster WHERE owner_jid = ? AND contact_jid = ?",
                           &stmt);
   if (rc != 0) {
+    stump_er("roster get: prepare failed");
     return -1;
   }
 
@@ -136,9 +142,11 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
   int rc;
 
   if (!owner_jid || !item) {
+    stump_er("roster upsert: invalid arguments");
     return -1;
   }
   if (storage_db_open(&db) != 0) {
+    stump_er("roster upsert: cannot open database");
     return -1;
   }
 
@@ -152,6 +160,7 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
                           "   ask = excluded.ask",
                           &stmt);
   if (rc != 0) {
+    stump_er("roster upsert: prepare failed");
     return -1;
   }
 
@@ -174,6 +183,7 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
   rc = storage_db_prepare(db, "DELETE FROM roster_groups WHERE owner_jid = ? AND contact_jid = ?",
                           &del_stmt);
   if (rc != 0) {
+    stump_er("roster upsert: prepare delete groups failed");
     return -1;
   }
   storage_db_bind_text(del_stmt, 1, owner_jid);
@@ -181,6 +191,7 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
   rc = storage_db_step(del_stmt);
   storage_db_reset(del_stmt);
   if (rc != SQLITE_DONE) {
+    stump_er("roster upsert: delete groups failed");
     return -1;
   }
 
@@ -192,6 +203,7 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
         " VALUES (?, ?, ?)",
         &ins_stmt);
     if (rc != 0) {
+      stump_er("roster upsert: prepare insert group failed");
       return -1;
     }
     for (int i = 0; i < group_count; i++) {
@@ -204,6 +216,7 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
       rc = storage_db_step(ins_stmt);
       storage_db_reset(ins_stmt);
       if (rc != SQLITE_DONE) {
+        stump_er("roster upsert: insert group failed");
         return -1;
       }
     }
@@ -218,14 +231,17 @@ int storage_roster_remove(const char* owner_jid, const char* contact_jid) {
   int rc;
 
   if (!owner_jid || !contact_jid) {
+    stump_er("roster remove: invalid arguments");
     return -1;
   }
   if (storage_db_open(&db) != 0) {
+    stump_er("roster remove: cannot open database");
     return -1;
   }
 
   rc = storage_db_prepare(db, "DELETE FROM roster WHERE owner_jid = ? AND contact_jid = ?", &stmt);
   if (rc != 0) {
+    stump_er("roster remove: prepare failed");
     return -1;
   }
 
@@ -249,9 +265,11 @@ int storage_roster_get_groups(const char* owner_jid, const char* contact_jid,
   int count = 0;
 
   if (!owner_jid || !contact_jid || !groups_out || max_groups <= 0) {
+    stump_er("roster get_groups: invalid arguments");
     return -1;
   }
   if (storage_db_open(&db) != 0) {
+    stump_er("roster get_groups: cannot open database");
     return -1;
   }
 
@@ -260,6 +278,7 @@ int storage_roster_get_groups(const char* owner_jid, const char* contact_jid,
                           " WHERE owner_jid = ? AND contact_jid = ?",
                           &stmt);
   if (rc != 0) {
+    stump_er("roster get_groups: prepare failed");
     return -1;
   }
 

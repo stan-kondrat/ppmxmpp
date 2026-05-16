@@ -76,18 +76,22 @@ static int config_parse_cfg(config_t* cfg, server_config_t* out) {
   int ival;
 
   if (config_lookup_string(cfg, "db_path", &val) && config_set_db_path(val, out) != 0) {
+    stump_er("config: invalid db_path");
     return -1;
   }
 
   if (config_lookup_string(cfg, "log_level", &val) && config_set_log_level(val, out) != 0) {
+    stump_er("config: invalid log_level");
     return -1;
   }
 
   if (config_lookup_string(cfg, "bind_host", &val) && config_set_bind_host(val, out) != 0) {
+    stump_er("config: invalid bind_host");
     return -1;
   }
 
   if (config_lookup_int(cfg, "bind_port", &ival) && config_set_bind_port(ival, out) != 0) {
+    stump_er("config: invalid bind_port");
     return -1;
   }
 
@@ -173,6 +177,7 @@ int config_load(const char* path) {
 
   server_config = default_server_config;
   if (config_parse_cfg(&cfg, &server_config) != 0) {
+    stump_er("config: parse failed");
     config_destroy(&cfg);
     return -1;
   }

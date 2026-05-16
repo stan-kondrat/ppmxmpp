@@ -16,6 +16,7 @@ static int b64_decode(const char* in, size_t in_len, unsigned char** out, size_t
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   *out = malloc(in_len);
   if (!*out) {
+    stump_er("b64_decode: out of memory");
     return -1;
   }
 

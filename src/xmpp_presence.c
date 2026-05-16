@@ -72,6 +72,7 @@ int presence_session_write(const char* bound_jid, const char* data, size_t len) 
       return g_sessions[i].write_fn(g_sessions[i].write_ud, data, len);
     }
   }
+  stump_er("presence_session_write: session not found for '%s'", bound_jid);
   return -1;
 }
 
@@ -198,7 +199,10 @@ static int update_subscription(const char* owner, const char* contact,
   item.ask = ask;
 
   sqlite3* db;
-  if (storage_db_open(&db) != 0) return -1;
+  if (storage_db_open(&db) != 0) {
+    stump_er("update_subscription: cannot open database");
+    return -1;
+  }
   rc = storage_roster_upsert(owner, &item, NULL, 0);
   storage_db_close();
   return rc;

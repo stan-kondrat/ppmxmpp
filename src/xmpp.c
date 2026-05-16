@@ -106,6 +106,7 @@ static int write_append(xmpp_session_t* ctx, const char* fmt, ...) {
   va_end(ap);
   if (n < 0 || (size_t)n >= sizeof(ctx->out_buf) - ctx->out_len) {
     /* Buffer full — flush what we have so far, then retry. */
+    stump_er("write_append: buffer overflow");
     va_end(ap_save);
     return -1;
   }
@@ -135,10 +136,12 @@ static int _is_forbidden_resource_char(unsigned char ch) {
 static int _validate_resource(const char* res) {
   size_t len = strlen(res);
   if (len == 0 || len > 1023) {
+    stump_er("_validate_resource: invalid length %zu", len);
     return -1;
   }
   for (size_t i = 0; i < len; i++) {
     if (_is_forbidden_resource_char((unsigned char)res[i])) {
+      stump_er("_validate_resource: forbidden character at index %zu", i);
       return -1;
     }
   }
@@ -323,16 +326,19 @@ static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, xmpp_even
     send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
     ctx->state = XMPP_STATE_CLOSING;
     ctx->pending_error = 1;
+    stump_er("_transition_to: invalid transition");
     return -1;
   }
 
   ctx->state = new_state;
 
   if (_send_stream_features(ctx) != 0) {
+    stump_er("_transition_to: _send_stream_features failed");
     ctx->pending_error = 1;
     return -1;
   }
   if (write_flush(ctx, ctx->write_fn, ctx->write_ud) != 0) {
+    stump_er("_transition_to: write_flush failed");
     ctx->pending_error = 1;
     return -1;
   }
@@ -366,9 +372,11 @@ static int _send_stream_features(xmpp_session_t* ctx) {
                           "<required/>"
                           "</starttls>"
                           "</stream:features>") != 0) {
+      stump_er("_send_stream_features: buffer overflow (starttls)");
       return -1;
     }
     break;
+
 
   case XMPP_STATE_STREAM_RESTARTED_POST_TLS:
     /* TLS active — offer SASL mechanisms. */
@@ -377,9 +385,11 @@ static int _send_stream_features(xmpp_session_t* ctx) {
                           "<mechanism>PLAIN</mechanism>"
                           "</mechanisms>"
                           "</stream:features>") != 0) {
+      stump_er("_send_stream_features: buffer overflow (sasl)");
       return -1;
     }
     break;
+
 
   case XMPP_STATE_STREAM_RESTARTED_POST_SASL:
     /* RFC 6120 §7: offer resource bind after SASL success and stream restart. */
@@ -387,6 +397,7 @@ static int _send_stream_features(xmpp_session_t* ctx) {
                           "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
                           "<required/></bind>"
                           "</stream:features>") != 0) {
+      stump_er("_send_stream_features: buffer overflow (bind)");
       return -1;
     }
     break;
@@ -412,10 +423,12 @@ static int _send_stream_close(xmpp_session_t* ctx) {
 
   int rc = write_append(ctx, "</stream:stream>");
   if (rc != 0) {
+    stump_er("_send_stream_close: write_append failed");
     return -1;
   }
   rc = write_flush(ctx, ctx->write_fn, ctx->write_ud);
   if (rc != 0) {
+    stump_er("_send_stream_close: write_flush failed");
     return -1;
   }
 
@@ -434,6 +447,7 @@ static int send_stream_open(xmpp_session_t* ctx, xmpp_write_fn write_fn, void* u
                         "xml:lang='en'>",
                         ctx->domain, ctx->stream_id);
   if (rc != 0) {
+    stump_er("send_stream_open: write_append failed");
     return -1;
   }
   return write_flush(ctx, write_fn, ud);

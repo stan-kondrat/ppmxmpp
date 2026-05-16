@@ -160,6 +160,7 @@ int storage_db_open(sqlite3** db_out) {
   const char* db_path = server_config.db_path;
 
   if (ensure_directory(db_path) != 0) {
+    stump_er("storage_db_open: cannot ensure directory");
     return -1;
   }
 
@@ -183,6 +184,7 @@ int storage_db_open(sqlite3** db_out) {
 
   /* Apply migrations. */
   if (apply_migrations(g_db) != 0) {
+    stump_er("storage_db_open: apply_migrations failed");
     sqlite3_close(g_db);
     g_db = NULL;
     return -1;

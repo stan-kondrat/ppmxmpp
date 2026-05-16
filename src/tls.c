@@ -62,9 +62,11 @@ int generate_self_signed_cert(const char* cert_path, const char* key_path) {
   unsigned char buf[4096];
 
   if (ensure_parent_dir(cert_path) != 0) {
+    stump_er("generate_self_signed_cert: cannot ensure cert directory");
     return -1;
   }
   if (ensure_parent_dir(key_path) != 0) {
+    stump_er("generate_self_signed_cert: cannot ensure key directory");
     return -1;
   }
 

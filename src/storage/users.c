@@ -17,16 +17,19 @@ int storage_users_get_by_jid(const char* bare_jid, storage_user_t* user_out) {
   int rc;
 
   if (!bare_jid || !user_out) {
+    stump_er("users get_by_jid: invalid arguments");
     return -1;
   }
 
   if (storage_db_open(&db) != 0) {
+    stump_er("users get_by_jid: cannot open database");
     return -1;
   }
 
   rc = storage_db_prepare(
       db, "SELECT jid, password_plain FROM users WHERE jid = ? AND disabled = 0", &stmt);
   if (rc != 0) {
+    stump_er("users get_by_jid: prepare failed");
     return -1;
   }
 
@@ -85,10 +88,12 @@ int storage_users_create(const char* bare_jid, const char* password_plain) {
   long long now;
 
   if (!bare_jid || !password_plain) {
+    stump_er("users create: invalid arguments");
     return -1;
   }
 
   if (storage_db_open(&db) != 0) {
+    stump_er("users create: cannot open database");
     return -1;
   }
 
@@ -99,6 +104,7 @@ int storage_users_create(const char* bare_jid, const char* password_plain) {
                           "disabled) VALUES (?, ?, ?, 0)",
                           &stmt);
   if (rc != 0) {
+    stump_er("users create: prepare failed");
     return -1;
   }
 
@@ -128,11 +134,13 @@ int storage_users_disable(const char* bare_jid) {
   int rc;
 
   if (storage_db_open(&db) != 0) {
+    stump_er("users disable: cannot open database");
     return -1;
   }
 
   rc = storage_db_prepare(db, "UPDATE users SET disabled = 1 WHERE jid = ?", &stmt);
   if (rc != 0) {
+    stump_er("users disable: prepare failed");
     return -1;
   }
 
@@ -146,7 +154,7 @@ int storage_users_disable(const char* bare_jid) {
   }
 
   if (storage_db_changes(db) == 0) {
-    stump_w("user '%s' not found for disabling", bare_jid);
+    stump_er("users disable: no rows affected for '%s'", bare_jid);
     return -1;
   }
 
