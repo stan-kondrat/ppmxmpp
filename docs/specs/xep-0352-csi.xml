@@ -1,0 +1,217 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+%ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<xep>
+<header>
+  <title>Client State Indication</title>
+  <abstract>This document defines a way for the client to indicate its active/inactive state.</abstract>
+  &LEGALNOTICE;
+  <number>0352</number>
+  <status>Draft</status>
+  <lastcall>2020-08-18</lastcall>
+  <lastcall>2017-12-21</lastcall>
+  <lastcall>2017-11-15</lastcall>
+  <lastcall>2017-03-28</lastcall>
+  <lastcall>2017-03-01</lastcall>
+  <lastcall>2017-02-22</lastcall>
+  <lastcall>2015-09-07</lastcall>
+  <type>Standards Track</type>
+  <sig>Standards</sig>
+  <approver>Council</approver>
+  <dependencies>
+    <spec>XMPP Core</spec>
+  </dependencies>
+  <supersedes/>
+  <supersededby/>
+  <shortname>csi</shortname>
+  &mwild;
+  <revision>
+    <version>1.0.0</version>
+    <date>2020-10-14</date>
+    <initials>XEP Editor (jsc)</initials>
+    <remark>Accepted as Draft as per Council vote from 2020-08-26.</remark>
+  </revision>
+  <revision>
+    <version>0.3.0</version>
+    <date>2018-11-08</date>
+    <initials>XEP Editor (jsc)</initials>
+    <remark>Defer due to lack of activity.</remark>
+  </revision>
+  <revision>
+    <version>0.2.1</version>
+    <date>2017-02-18</date>
+    <initials>fs</initials>
+    <remark><p>Clarify that the CSI state is not restored when the stream is resumed.</p></remark>
+  </revision>
+  <revision>
+    <version>0.2</version>
+    <date>2015-10-02</date>
+    <initials>XEP Editor (mam)</initials>
+    <remark><p>Clarified how CSI is affected by in-order processing (Florian Schmaus).</p></remark>
+  </revision>
+  <revision>
+    <version>0.1</version>
+    <date>2014-08-28</date>
+    <initials>XEP Editor (asw)</initials>
+    <remark><p>Initial published version approved by the XMPP Council.</p></remark>
+  </revision>
+  <revision>
+    <version>0.0.1</version>
+    <date>2014-08-14</date>
+    <initials>mw</initials>
+    <remark><p>First draft.</p></remark>
+  </revision>
+</header>
+
+<section1 topic='Introduction' anchor='intro'>
+  <p>It is common for IM clients to be logged in and 'online' even while the user is not interacting with the application. This
+  protocol allows the client to indicate to the server when the user is not actively using the client, allowing the server to
+  optimise traffic to the client accordingly. This can save bandwidth and resources on both the client and server.</p>
+</section1>
+
+<section1 topic='Requirements' anchor='reqs'>
+  <p>The aim of this specification is to provide a simple and efficient protocol for the client to report its
+  state to the server. Exactly how the server uses this information is beyond the scope of this document, although
+  some examples are given.</p>
+  <p>Other extensions exist, such as &xep0273;, which also aim to optimise the traffic between the client and server.
+  A notable difference is that instead of being client-controlled, CSI shifts the responsibility to the server, and
+  aims to just provide the server with enough information to implement various optimisations itself.</p>
+</section1>
+
+<section1 topic='Use Cases' anchor='usecases'>
+  <section2 topic='User and client behaviour' anchor='behaviour-user'>
+    <p>Juliet has an XMPP client on her phone, which is available to receive messages. However most of the time
+    Juliet has her phone screen turned off and is not interested in the status of her contacts unless they are
+    communicating with her.</p>
+
+    <p>Juliet's client informs the server when Juliet is not interacting with it. The server uses this information to
+    suppress or reduce stanzas that are unimportant, such as status updates.</p>
+
+    <p>When Juliet returns to her IM client, the client again informs the server, this time to report that it is active
+    again. The server then disables its traffic optimisations and restores the stream to its normal state.</p>
+  </section2>
+  <section2 topic="Server behaviour">
+    <p>When the server knows that the user is not engaging with their client many optimisations become possible. For
+    example a server could:</p>
+    <ul>
+    <li>Suppress presence updates until the client becomes active again. On becoming active, push the latest
+    presence from each contact.</li>
+    <li>Discard messages containing only &xep0085; payloads.</li>
+    <li>Defer or discard unimportant PEP notifications, possibly unsubscribe from certain PEP nodes
+    until the client becomes active again.</li>
+    </ul>
+
+    <p>This list is for example only, a server is not required to implement all or any of these, nor is it prevented
+    from implementing other behaviour not listed here. Regardless of what optimisations a server implements, it SHOULD
+    provide a way for administrators to configure them, and MAY provide such configuration to users also (e.g., through an
+    ad-hoc command).</p>
+  </section2>
+</section1>
+<section1 topic="Protocol" anchor="protocol">
+  <section2 topic="Discovering support" anchor="discovery">
+    <p>If the server supports CSI, it advertises it in the stream features after the client has authenticated:</p>
+    <example caption='Server indicates support for CSI'><![CDATA[
+      <stream:features>
+        <bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/>
+        <csi xmlns='urn:xmpp:csi:0'/>
+      </stream:features>
+]]></example>
+  </section2>
+
+  <section2 topic="Indicating state" anchor="indication">
+    <p>A stream always begins in 'active' state. If a client wishes to inform the server that it has become inactive,
+    it sends an &lt;inactive/&gt; element in the 'urn:xmpp:csi:0' namespace:</p>
+    <example caption='Client indicates it is inactive'><![CDATA[
+      <inactive xmlns='urn:xmpp:csi:0'/>
+]]></example>
+
+    <p>As might be anticipated, when the client is active again it sends an &lt;active/&gt; element:</p>
+    <example caption='Client indicates it is active'><![CDATA[
+      <active xmlns='urn:xmpp:csi:0'/>
+]]></example>
+
+    <p>There is no reply from the server to either of these elements (though they may indirectly cause the server to
+  send stanzas, e.g., to update presence information when the client becomes active after a period of inactivity).</p>
+  </section2>
+</section1>
+<section1 topic='Business Rules' anchor='rules'>
+  <p>As this protocol is for indication only, clients MUST NOT make assumptions about how the server
+  will use the active/inactive state information.</p>
+
+  <p>The server MUST assume all clients to be in the 'active' state until the client indicates otherwise. Also the
+  CSI active/inactive state is unrelated to the user's presence, the server MUST treat the two independently.</p>
+
+  <p>This protocol is intended primarily for clients with human interaction. Due to the open-ended nature of
+  the possible optimisations implemented by the server, it may not be suitable for non-IM purposes where the
+  fully standard behaviour of XMPP is required.</p>
+  <section2 topic="In-order processing" anchor="in-order-processing">
+	<p>
+	  XMPP requires stanzas to be processed in order as per &rfc6120; 10.1. Especially "If the server's processing of a particular request could have an effect on its processing of subsequent data it might receive over that input stream..., it MUST suspend processing of subsequent data until it has processed the request.". As a result, all actions triggered by a CSI nonza sent to the server must happen before processing further requests from the same client to the server.
+	</p>
+	<p>
+	  For example: A client sends a CSI active nonza, followed by an XMPP Ping request to the server. The server first changes the CSI state to active and flushes all eventually queued stanzsa. After the state has been restored to 'active' and
+all resulting stanzas have been put on the wire, the
+server sends the pong.
+	</p>
+    <example caption='In-order processing'><![CDATA[
+<!-- Client sends 'active' and a ping to the server -->
+<active xmlns='urn:xmpp:csi:0'/>
+<iq to='capulaet.lit' from='juliet@capulet.lit/balcony' id='ping1' type='get'>
+  <ping xmlns='urn:xmpp:ping'/>
+</iq>
+
+<!-- Server restores stream state to active,
+e.g. by flushing out queued stanzas to the client.
+and responds to the ping with a pong -->
+<iq to='juliet@capulet.lit/baclony' from='capulet.lit' id='ping1' type='result'/>
+<!-- Stream state is now 'active' -->]]></example>
+  </section2>
+  <section2 topic='Interaction with Stream Resumption' anchor='stream-resumption'>
+    <p>After a previous stream was resumed using mechanisms like
+    &xep0198;, the CSI state is <em>not</em> restored. That is, stream
+    resumption does not affect the current CSI state, which always
+    defaults to 'active' for new and resumed streams. Clients wishing
+    to immediately go to the inactive state should do so after stream
+    resumption.</p>
+  </section2>
+</section1>
+<section1 topic='Security Considerations' anchor='security'>
+  <p>To protect the privacy of users, servers MUST NOT reveal the clients active/inactive state to other
+  entities on the network.</p>
+</section1>
+<section1 topic='IANA Considerations' anchor='iana'>
+  <p>This document requires no interaction with &IANA;.</p>
+</section1>
+<section1 topic='XMPP Registrar Considerations' anchor='registrar'>
+  <p>This document requires no interaction with &REGISTRAR;.</p>
+</section1>
+<section1 topic='XML Schema'>
+  <code><![CDATA[
+<?xml version='1.0' encoding='UTF-8'?>
+
+<xs:schema
+    xmlns:xs='http://www.w3.org/2001/XMLSchema'
+    targetNamespace='urn:xmpp:csi:0'
+    xmlns='urn:xmpp:csi:0'
+    elementFormDefault='qualified'>
+
+  <xs:element name='csi' type='empty'/>
+  <xs:element name='active' type='empty'/>
+  <xs:element name='inactive' type='empty'/>
+
+  <xs:simpleType name='empty'>
+    <xs:restriction base='xs:string'>
+      <xs:enumeration value=''/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>
+]]></code>
+</section1>
+<section1 topic='Acknowledgements' anchor='acknowledgements'>
+  <p>Thanks to Florian Schmaus for his feedback.</p>
+</section1>
+</xep>

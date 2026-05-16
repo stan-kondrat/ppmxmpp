@@ -1,0 +1,334 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+%ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<xep>
+<header>
+  <title>Displayed Markers</title>
+  <abstract>This specification introduces a method to let the sender, or multiple participants in a group chat, know that a client has displayed messages up to a certain point.</abstract>
+  &LEGALNOTICE;
+  <number>0333</number>
+  <status>Draft</status>
+  <lastcall>2024-04-08</lastcall>
+  <lastcall>2017-03-01</lastcall>
+  <lastcall>2017-02-22</lastcall>
+  <lastcall>2017-02-11</lastcall>
+  <type>Standards Track</type>
+  <sig>Standards</sig>
+  <approver>Council</approver>
+  <dependencies>
+    <spec>XMPP Core</spec>
+    <spec>XEP-0001</spec>
+  </dependencies>
+  <supersedes/>
+  <supersededby/>
+  <shortname>NOT_YET_ASSIGNED</shortname>
+  <author>
+    <firstname>Spencer</firstname>
+    <surname>MacDonald</surname>
+    <email>im@spencermacdonald.com</email>
+    <jid>im@spencermacdonald.com</jid>
+  </author>
+  &inputmice;
+   <revision>
+    <version>1.0.0</version>
+    <date>2024-04-17</date>
+    <initials>XEP Editor (dg)</initials>
+    <remark>Accept as Stable as per Council Vote from 2024-04-17.</remark>
+  </revision>
+  <revision>
+    <version>0.7.0</version>
+    <date>2024-04-04</date>
+    <initials>dg</initials>
+    <remark>
+      <ul>
+        <li>Change title to "Displayed Markers"</li>
+        <li>Bring back Service Discovery feature</li>
+      </ul>
+    </remark>
+  </revision>
+  <revision>
+    <version>0.6.0</version>
+    <date>2024-03-21</date>
+    <initials>dg</initials>
+    <remark>
+      <ul>
+        <li>Add Business Rule about opportunistic Displayed Markers in 1:1 chats</li>
+      </ul>
+    </remark>
+  </revision>
+  <revision>
+    <version>0.5.0</version>
+    <date>2024-03-06</date>
+    <initials>dg</initials>
+    <remark>
+      <ul>
+        <li>Remove &lt;received/> to not replicate &xep0184; functionality.</li>
+        <li>Remove &lt;acknowledged/> because it was not implemented in the last 10 years and apparently is not needed.</li>
+        <li>Remove Disco feature. Opting in via &lt;markable/> is enough</li>
+      </ul>
+    </remark>
+  </revision>
+  <revision>
+    <version>0.4.1</version>
+    <date>2023-07-19</date>
+    <initials>gdk</initials>
+    <remark>Changed discovery example to use client JIDs.</remark>
+  </revision>
+  <revision>
+    <version>0.4</version>
+    <date>2020-04-15</date>
+    <initials>mw</initials>
+    <remark>Add notes about usage within MUCs.</remark>
+  </revision>
+  <revision>
+    <version>0.3</version>
+    <date>2017-09-11</date>
+    <initials>XEP Editor (jwi)</initials>
+    <remark>Defer due to lack of activity.</remark>
+  </revision>
+  <revision>
+    <version>0.2.1</version>
+    <date>2015-10-28</date>
+    <initials>XEP Editor (mam)</initials>
+    <remark><p>Fixing typo ("cannot" repeated twice) (JC Brand).</p></remark>
+  </revision>
+  <revision>
+    <version>0.2</version>
+    <date>2013-09-05</date>
+    <initials>sdm</initials>
+    <remark><p>Moved Thread outside of the Chat Marker.</p></remark>
+  </revision>
+  <revision>
+    <version>0.1</version>
+    <date>2013-07-11</date>
+    <initials>psa</initials>
+    <remark><p>Initial published version approved by the XMPP Council.</p></remark>
+  </revision>
+  <revision>
+    <version>0.0.4</version>
+    <date>2013-07-06</date>
+    <initials>sdm</initials>
+    <remark>
+      <p>Noted that Chat Markers is a heuristic solution.</p>
+      <p>Added markable element.</p>
+    </remark>
+  </revision>
+  <revision>
+    <version>0.0.3</version>
+    <date>2013-06-20</date>
+    <initials>sdm</initials>
+    <remark>
+      <p>Changed read Chat Marker to displayed.</p>
+      <p>Removed stamp from Chat Marker.</p>
+      <p>Added thread to Chat Marker.</p>
+      <p>Changed namespace to allow for versioning.</p>
+    </remark>
+  </revision>
+  <revision>
+    <version>0.0.2</version>
+    <date>2013-06-11</date>
+    <initials>sdm</initials>
+    <remark><p>Change to a message based protocol.</p></remark>
+  </revision>
+  <revision>
+    <version>0.0.1</version>
+    <date>2013-05-24</date>
+    <initials>sdm</initials>
+    <remark><p>First draft.</p></remark>
+  </revision>
+</header>
+<section1 topic='Introduction' anchor='intro'>
+  <p>Letting the sender and/or multiple participants of a group chat know that an entity has displayed (Colloquially known as <em>read</em>) a message is a common feature in modern instant messaging.</p>
+  <p>&xep0184; currently provides delivery receipts on a per message basis, but it does not provide any mechanism for the user to indicate that they have read the message.</p>
+  <p>This specification defines a protocol for the sender of a message to let the recipient know they are interested in whether the recipient’s client has displayed the message and a protocol for the recipient to respond to said request. In group chats the explicit request is omitted and participants opportunistically share their displayed state with others.</p>
+  <p>Displayed Markers carry a semantic of <em>all messages up to this point</em>.</p>
+  <p class='box'>Note: Displayed Markers do not mark each individual message, nor do they assume a reliable transport. This means that Displayed Markers can only provide a heuristic solution, but this is often satisfactory for the majority of use cases.</p>
+</section1>
+
+<section1 topic='Requirements' anchor='reqs'>
+  <ul>
+    <li>Enable a client to mark the last displayed message in a chat.</li>
+    <li>Enable a client to fetch and set Displayed Markers regardless of whether the other users in a chat are online.</li>
+    <li>Do not replicate functionality of &xep0184;</li>
+    <li>Do not be concerned about displayed state synchronization across multiple devices of the same user</li>
+  </ul>
+</section1>
+
+<section1 topic='Determining support' anchor='disco'>
+	<p>If an entity supports the Displayed Markers protocol, it MUST report that by including a &xep0030;
+	 feature of "urn:xmpp:chat-markers:0" in response to disco#info requests:</p>
+<example caption='Client queries for features'>
+<![CDATA[
+<iq type='get' id='disco1' to='romeo@montague.lit/mobile' from='juliet@capulet.lit/balcony'>
+  <query xmlns='http://jabber.org/protocol/disco#info'/>
+</iq>
+]]>
+</example>
+
+<example caption='Entity responds with features'>
+<![CDATA[
+<iq type='result' id='disco1' from='romeo@montague.lit/mobile' to='juliet@capulet.lit/balcony'>
+  <query xmlns='http://jabber.org/protocol/disco#info'>
+    ...
+    <feature var='urn:xmpp:chat-markers:0'/>
+    ...
+  </query>
+</iq>
+]]>
+</example>
+	<p>Support can also be determined via &xep0115; or &xep0390;.</p>
+</section1>
+
+<section1 topic='Use Cases' anchor='usecases'>
+  <section2 topic='Requesting Displayed Markers' anchor='request'>
+    <p>An entity interested to know if the recipient has displayed a message attaches a &lt;markable/> element qualified by the 'urn:xmpp:chat-markers:0' namespace to the message. The message MUST possess an 'id' attribute for traceability.</p>
+    <example caption="Romeo sends a message to Juliet"><![CDATA[
+<message to='juliet@capulet.lit' from='romeo@montegue.lit/orchard' id='the-msg-1'>
+  <body>Hi. How are you?</body>
+  <markable xmlns='urn:xmpp:chat-markers:0'/>
+  <request xmlns='urn:xmpp:receipts'/>
+</message>
+]]></example>
+  </section2>
+  <section2 topic='Sending Displayed Markers' anchor='sending'>
+  <p>To let the sender know a message has been displayed an entity sends a message with a &lt;displayed/> element qualified by the 'urn:xmpp:chat-markers:0' namespace. The &lt;displayed/> element MUST have an 'id' attribute that copies the value from the 'id' attribute of the message it refers to.</p>
+  <p>A Displayed Marker MAY be sent to the bare JID of the entity that requested it.</p>
+  <p>If multiple messages are displayed at once an entity SHOULD only send a &lt;displayed/> marker for the most recent, received message.</p>
+  <p>To prevent looping, an entity MUST NOT send a Displayed Marker as a response to a Displayed Marker.</p>
+  <example caption="Juliet lets both Romeo she has displayed the message"><![CDATA[
+<message to='romeo@montegue.lit' from='juliet@capulet.let/balcony'>
+   <displayed xmlns='urn:xmpp:chat-markers:0' id='the-msg-1'/>
+</message>
+]]></example>
+  </section2>
+  <section2 topic='Group Chats' anchor='groups'>
+   <p>Displayed Markers can be used within group chats to indicate read status of each occupant.</p>
+    <p>Within the context of a MUC messages are relayed through the MUC's own JID. In a
+       MUC that preserves the 'id' attribute chosen by the sender of the message this
+       'id' attribute cannot be considered unique, as it may be unintentionally or
+       even maliciously reused by another MUC occupant.</p>
+    <p>Therefore, if a MUC announces support for &xep0359; then clients MUST always use
+       the MUC-assigned id for Displayed Markers. The id will be contained in a &lt;stanza-id/&gt;
+       element inserted into the stanza with a 'by' attribute matching the MUC's own JID.</p>
+    <p>As per XEP-0359 security considerations, if XEP-0359 support is not announced on the
+       MUC room's JID then &lt;stanza-id/&gt; elements with a 'by' attribute that match the
+       MUC's JID should be considered spoofed and MUST be ignored.</p>
+    <p>In group chats the Displayed Marker MAY be sent opportunistically, meaning without an explicit &lt;markable/> request from the sender. While the sender might not be interested in or have support for Display Markers, other participants of the group chat could be interested in them.</p>
+
+<example caption='Example MUC message with a markable Displayed Marker'>
+<![CDATA[
+<message
+    from='coven@chat.shakespeare.lit/firstwitch'
+    to='coven@chat.shakespeare.lit'
+    id='message-1'
+    type='groupchat'>
+  <thread>Act IV, Scene I</thread>
+  <body>Thrice the brinded cat hath mew'd.</body>
+  <markable xmlns='urn:xmpp:chat-markers:0' />
+  <stanza-id xmlns='urn:xmpp:sid:0' by='coven@chat.shakespeare.lit' id='39K7ZYIp' />
+</message>
+]]>
+</example>
+
+<example caption='Example marker response to a markable MUC message'>
+<![CDATA[
+<message
+    from='coven@chat.shakespeare.lit/secondwitch'
+    to='coven@chat.shakespeare.lit'
+    id='message-2'
+    type='groupchat'>
+  <thread>Act IV, Scene I</thread>
+  <displayed xmlns='urn:xmpp:chat-markers:0'
+            id='39K7ZYIp'/>
+</message>
+]]>
+</example>
+  </section2>
+</section1>
+
+<section1 topic='Business Rules' anchor='rules'>
+  <ul>
+     <li>Displayed Marker only move forward. Receiving a Display Marker with an id-attribute that references a message older than the current local representation is considered redundant and MUST be ignored.</li>
+    <li>Displayed Marker with an id-attribute that references a message not found in the respective chat MUST be ignored.</li>
+    <li>Entities MUST not sent Displayed Markers for outgoing messages that were sent by the same or a different resource of the same entity (received for example via &xep0280; or &xep0313;).</li>
+    <li>Sending opportunistic Displayed Markers (as a response to messages without an explicit &lt;markable/>) in normal, 1:1 chats is NOT RECOMMENDED.</li>
+  </ul>
+</section1>
+
+<section1 topic='Accessibility Considerations' anchor='access'>
+  <p>Graphical representations of displayed markers for example in the form of checkmarks need to be made available for visually impaired users.</p>
+</section1>
+
+<section1 topic='Security Considerations' anchor='security'>
+  <ul>
+    <li>A user may not wish to disclose that they have displayed or acknowledge a message.</li>
+    <li>It is possible for a sender to leak its presence when updating Displayed Markers; therefore, a sender SHOULD NOT send Displayed Markers to recipients who are not otherwise authorized to view its presence.</li>
+    <li>To accurately and reliably match Displayed Markers to current participants of a group chat, implementations MUST use the real JID (when available, for example in non-anonymous MUCs) or &xep0421;.</li>
+  </ul>
+</section1>
+
+<section1 topic='Privacy Considerations' anchor='privacy'>
+  <p>Letting others know that one has displayed (read) a message is not a desirable feature for everyone. Clients SHOULD provide ways to opt-out of this feature.</p>
+</section1>
+
+<section1 topic='IANA Considerations' anchor='iana'>
+  <p>This document requires no interaction with the Internet Assigned Numbers Authority (IANA).</p>
+</section1>
+
+<section1 topic='XMPP Registrar Considerations' anchor='registrar'>
+  <section2 topic='Protocol Namespaces' anchor='registrar-ns'>
+	<p>This specification defines the following XML namespace:</p>
+    <ul>
+      <li>'urn:xmpp:chat-markers:0'</li>
+    </ul>
+  </section2>
+</section1>
+
+<section1 topic='Design Considerations' anchor='design'>
+  <p>Earlier drafts of this specification included &lt;received/> and &lt;acknowledged/> with the same <em>up to this point</em> semantic as the remaining &lt;displayed/>. However in the review phase it was concluded that most implementers prefer the per-message precision of &xep0184; for received tracking. While &lt;displayed/> has been widely implemented during a 10+ year review phase there was seemingly no demand for &lt;acknowledged/>.</p>
+</section1>
+
+<section1 topic='XML Schema' anchor='schema'>
+  <code>
+<![CDATA[
+<?xml version='1.0' encoding='UTF-8'?>
+
+<xs:schema attributeFormDefault="unqualified"
+  elementFormDefault="qualified"
+  targetNamespace="urn:xmpp:chat-markers:0"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <xs:annotation>
+    <xs:documentation>
+      The protocol documented by this schema is defined in
+      XEP-0333: http://xmpp.org/extensions/xep-0333.html
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:element name="markable">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="displayed">
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base="xs:string">
+          <xs:attribute type="xs:string" name="id"/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>
+]]>
+</code>
+</section1>
+</xep>

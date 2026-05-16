@@ -1,0 +1,279 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE xep SYSTEM 'xep.dtd' [
+  <!ENTITY % ents SYSTEM 'xep.ent'>
+%ents;
+]>
+<?xml-stylesheet type='text/xsl' href='xep.xsl'?>
+<xep>
+<header>
+  <title>Message Delivery Receipts</title>
+  <abstract>This specification defines an XMPP protocol extension for message delivery receipts, whereby the sender of a message can request notification that the message has been delivered to a client controlled by the intended recipient.</abstract>
+  &LEGALNOTICE;
+  <number>0184</number>
+  <status>Draft</status>
+  <type>Standards Track</type>
+  <sig>Standards</sig>
+  <approver>Council</approver>
+  <dependencies>
+    <spec>XMPP Core</spec>
+  </dependencies>
+  <supersedes>
+    <spec>XEP-0022 (in part)</spec>
+  </supersedes>
+  <supersededby/>
+  <shortname>receipts</shortname>
+  <schemaloc>
+    <url>http://xmpp.org/schemas/receipts.xsd</url>
+  </schemaloc>
+  &stpeter;
+  &hildjj;
+  <revision>
+    <version>1.4.0</version>
+    <date>2018-08-02</date>
+    <initials>egp</initials>
+    <remark><p>Make the 'id' attribute required, this extension makes no sense otherwise.</p></remark>
+  </revision>
+  <revision>
+    <version>1.3.0</version>
+    <date>2019-05-15</date>
+    <initials>gl</initials>
+    <remark><p>Suggest a message type to use for replies.</p></remark>
+  </revision>
+  <revision>
+    <version>1.2</version>
+    <date>2011-03-01</date>
+    <initials>psa</initials>
+    <remark><p>Clarified terminology and several points of implementation; explicitly stated that this protocol notifies the sender only that a message has been delivered to a client, not that it has been read or understood by a human user (if any); changed title from Message Receipts to Message Delivery Receipts to make this 100% clear.</p></remark>
+  </revision>
+  <revision>
+    <version>1.1</version>
+    <date>2010-03-31</date>
+    <initials>psa</initials>
+    <remark>
+      <ul>
+        <li>Clarified the level of reliability that this protocol provides and, most importantly, does not provide.</li>
+        <li>Explicitly discouraged dependence on receipts unless some other protocol is used to negotiate the use of message delivery receipts.</li>
+        <li>Provided explicit recommendations about when and when not to request receipts.</li>
+        <li>Relaxed the business rules to allow inclusion of receipt requests even to the bare JID and even if the sender does not yet know whether the intended recipient supports this protocol.</li>
+        <li>Added 'id' attribute to &lt;received/&gt; element for tracking purposes.</li>
+        <li>Removed text about XEP-0155 negotiation.</li>
+      </ul>
+    </remark>
+  </revision>
+  <revision>
+    <version>1.0</version>
+    <date>2007-09-26</date>
+    <initials>psa</initials>
+    <remark><p>Per a vote of the XMPP Council, advanced to Draft.</p></remark>
+  </revision>
+  <revision>
+    <version>0.4</version>
+    <date>2007-05-30</date>
+    <initials>psa</initials>
+    <remark><p>Per Council feedback, modified to use dedicated namespace (not AMP).</p></remark>
+  </revision>
+  <revision>
+    <version>0.3</version>
+    <date>2006-11-06</date>
+    <initials>psa</initials>
+    <remark><p>Removed reliability features, which belong at a different level.</p></remark>
+  </revision>
+  <revision>
+    <version>0.2</version>
+    <date>2006-09-21</date>
+    <initials>psa</initials>
+    <remark><p>Added two more scenarios; defined business rule about not sending to bare JIDs; specified security consideration regarding presence leaks.</p></remark>
+  </revision>
+  <revision>
+    <version>0.1</version>
+    <date>2006-04-11</date>
+    <initials>psa</initials>
+    <remark><p>Initial version.</p></remark>
+  </revision>
+  <revision>
+    <version>0.0.2</version>
+    <date>2006-04-07</date>
+    <initials>psa</initials>
+    <remark><p>Added text and examples for service discovery; added text and examples for chat session negotiation; added recommendations regarding message processing, retries, etc.</p></remark>
+  </revision>
+  <revision>
+    <version>0.0.1</version>
+    <date>2006-03-27</date>
+    <initials>psa</initials>
+    <remark><p>First draft.</p></remark>
+  </revision>
+</header>
+
+<section1 topic='Introduction' anchor='intro'>
+  <p>While &xep0079; provides message acknowledgements at the server level, it does not extend that model all the way to the client. <note>Naturally, message delivery receipts can be combined with the rules specified in <cite>Advanced Message Processing</cite> for more complete reporting.</note> However, sometimes client-level acknowledgements are needed, for example to provide "receipts". This document defines a mechanism for XMPP message delivery receipts, which are functionally equivalent to the "delivered" or "displayed" event in &xep0022;, which this specification in part obsoletes.</p>
+  <p>Note well that this specification does not distinguish between delivery and display, as was done in the message events protocol, in part because no implementations of XEP-0022 made that distinction. However, in the absence of such a distinction, readers need to understand that this protocol can provide only a notification that a message has been received at a client, i.e. delivered to a client, not that the message has been actively read or understood by a human user (if any). Therefore this extension is functionally equivalent to an <cite>Advanced Message Processing</cite> rule of "receipt", although it uses a dedicated namespace to simplify processing by clients and intermediate routers.</p>
+</section1>
+
+<section1 topic='Requirements' anchor='reqs'>
+  <p>This document addresses the following requirements:</p>
+  <ol>
+    <li>Enable a sender to request notification that an XMPP message stanza has been received (i.e., delivered to a client, but not necessarily read or understood by a human user, if any).</li>
+    <li>Enable a recipient to provide message delivery receipts if desired.</li>
+  </ol>
+</section1>
+
+<section1 topic='Terminology' anchor='terms'>
+  <p>The term "content message" refers to the stanza for which the original sender would like to receive a receipt.</p>
+  <p>The term "ack message" refers to the stanza by which the recipient acknowledges receipt of the content message at a client (i.e., delivery to a client).</p>
+</section1>
+
+<section1 topic='What This Protocol Provides' anchor='what'>
+  <p>This document defines a protocol that enables a sender to ask the recipient to acknowledge receipt of a content message by returning an ack message. Although the return of an ack message lets the sender know that the content message has been delivered to a client controlled by the intended recipient, there are many reasons why the sender might not receive an ack message immediately or at all, including but not limited to the following:</p>
+  <ul>
+    <li>The sender addressed the content message to the recipient's bare JID &LOCALBARE; and therefore does not know if the recipient even supports the Message Delivery Receipts protocol.</li>
+    <li>The sender has not bothered to determine whether the recipient supports the Message Delivery Receipts protocol.</li>
+    <li>The recipient (or the particular intended resource to which the sender addressed the content message) does not in fact support the Message Delivery Receipts protocol.</li>
+    <li>The intended resource supports the Message Delivery Receipts protocol but the recipient's server delivers the content message to another resource that does not support the Message Delivery Receipts protocol.</li>
+    <li>The recipient's client receives the content message but experiences a malfunction before generating an ack message.</li>
+    <li>The recipient returns an ack message but the ack message is lost on the way back from the recipient to the sender (e.g., because of connectivity issues or software failures at any hop).</li>
+    <li>The recipient simply does not wish to return a receipt for the content message.</li>
+  </ul>
+  <p>Because of these significant limitations, this protocol does not provide complete or even partial reliability or guaranteed delivery. Therefore, the sender SHOULD NOT impute any meaning to the fact that it has not received an ack message, unless it has established with the recipient that receipt requests will be honored; however, methods for doing so are out of scope for this specification and it is NOT RECOMMENDED to take any particular action (such as resending the content message) without such methods. <note>This protocol merely provides a building block that could be used in conjunction with other protocols to asymptotically approach the eventual goal of messaging reliability and guaranteed delivery.</note></p>
+  <p>Because it is possible for a given content message to be delivered to multiple XMPP resources controlled by the recipient, the sender of the content message needs to be prepared to receive multiple ack messages.</p>
+  <p>Finally, this protocol does not enable the sender to know that the intended recipient has read the message or understood the message (if the intended recipient is a human being), that the intended recipient has processed the message (if the intended recipient is a bot or other automated system), that an end user client has presented the message to a human user (if any), etc. This protocol provides delivery receipts only, not notifications about presentation, processing, reading, understanding, or any other action related to a message other than delivery to a client of some kind.</p>
+</section1>
+
+<section1 topic='When to Request Receipts' anchor='when'>
+  <p>A sender <em>could</em> request receipts on any non-error content message (chat, groupchat, headline, or normal) no matter if the recipient's address is a bare JID &LOCALBARE; or a full JID &LOCALFULL;. Whether it is <em>appropriate</em> or <em>advisable</em> to do so it another question. This section provides recommendations about when and when not to request receipts, and what results to expect in each scenario.</p>
+  <section2 topic='Bare JID' anchor='when-bare'>
+    <p>If the sender knows only the recipient's bare JID, it cannot determine (via &xep0030; or &xep0115;) whether the intended recipient supports the Message Delivery Receipts protocol. In this case, the sender MAY request a receipt when sending a content message of type "chat", "headline", or "normal" to the recipient's bare JID. However, the sender MUST NOT depend on receiving an ack message in reply.</p>
+  </section2>
+  <section2 topic='Full JID' anchor='when-full'>
+    <p>If the sender knows a full JID for the recipient (e.g., via presence), it SHOULD attempt to determine (via service disco or entity capabilities) whether the client at that full JID supports the Message Delivery Receipts protocol before attempting to request receipts.</p>
+    <p>If the sender determines that the recipient's client does not support the Message Delivery Receipts protocol then it SHOULD NOT request a receipt when sending a content message to that full JID and MUST NOT depend on receiving an ack message.</p>
+    <p>If the sender determines that the recipient's client supports the Message Delivery Receipts protocol then it MAY request a receipt when sending a content message of type "chat", "headline", or "normal" to that full JID. However, even in this case the sender SHOULD NOT depend on receiving an ack message.</p>
+  </section2>
+  <section2 topic='Groupchat' anchor='when-groupchat'>
+    <p>It is NOT RECOMMENDED to request a receipt when sending a content message of type "groupchat" in a &xep0045; room because the logic for determining when a content message is truly "received" by all of the room occupants is complex, and because the sender would receive one ack message from each occupant of the room, thus significantly increasing the number of stanzas sent through the room.</p>
+  </section2>
+  <section2 topic='Ack Messages' anchor='when-ack'>
+    <p>To prevent looping, an entity MUST NOT include a receipt request (i.e., the &lt;request/&gt; element) in an ack message (i.e., a message stanza that includes the &lt;received/&gt; element).</p>
+  </section2>
+  <section2 topic='Archived Messages' anchor='when-archive'>
+    <p>An entity MUST NOT send an ack message when a user views messages that have been archived or stored on the client or the server (e.g., via &xep0136;), only when first receiving the message.</p>
+  </section2>
+</section1>
+
+<section1 topic='Determining Support' anchor='disco'>
+  <p>If an entity supports the Message Delivery Receipts protocol, it MUST report that by including a &xep0030; feature of "urn:xmpp:receipts" in response to disco#info requests:</p>
+  <example caption="Initial Service Discovery information request"><![CDATA[
+<iq from='northumberland@shakespeare.lit/westminster'
+    id='disco1'
+    to='kingrichard@royalty.england.lit/throne'
+    type='get'>
+  <query xmlns='http://jabber.org/protocol/disco#info'/>
+</iq>
+]]></example>
+  <example caption="Service Discovery information response"><![CDATA[
+<iq from='kingrichard@royalty.england.lit/throne'
+    id='disco1'
+    to='northumberland@shakespeare.lit/westminster'
+    type='result'>
+  <query xmlns='http://jabber.org/protocol/disco#info'>
+    <feature var='urn:xmpp:receipts'/>
+  </query>
+</iq>
+]]></example>
+  <p>Support can also be determined via &xep0115;, a.k.a. "caps".</p>
+</section1>
+
+<section1 topic='Protocol Format' anchor='format'>
+  <p>In order to make it possible for senders to request and for recipients to generate message delivery receipts, we define a dedicated protocol extension qualified by the 'urn:xmpp:receipts' namespace.</p>
+  <p>There are two allowable elements in this namespace:</p>
+  <ul>
+    <li>&lt;request/&gt; -- included in a content message by a sending entity that wishes to know if the content message has been received, i.e., delivered to a client controlled by the intended recipient.</li>
+    <li>&lt;received/&gt; -- included in an ack message by a receiving entity that wishes to inform the sending entity that the content message has been received, i.e., delivered to a client controlled by the intended recipient.</li>
+  </ul>
+  <p>Specifically, the receiving entity shall return an ack message containing the &lt;received/&gt; extension if the content message has been delivered to a client controlled by the intended recipient. In general, a client will return a receipt only if the client has processed the content message (e.g., if the client has presented the content message to a human user or has completed any automated processing of the content message, such as generation of an error response if the application determines that the content message cannot be handled). However, the Message Delivery Receipts protocol does not provide notification that a human user has read or understood the content message, that an automated system has completed processed or acted upon the message, etc.</p>
+  <p>The following is an example of a content message that includes a request for return receipt.</p>
+  <example caption='A content message with receipt requested'><![CDATA[
+<message
+    from='northumberland@shakespeare.lit/westminster'
+    id='richard2-4.1.247'
+    to='kingrichard@royalty.england.lit/throne'>
+  <body>My lord, dispatch; read o'er these articles.</body>
+  <request xmlns='urn:xmpp:receipts'/>
+</message>
+]]></example>
+  <p class='box'>Note: A sender MUST include an 'id' attribute on every content message that requests a receipt, so that the sender can properly track ack messages.</p>
+  <p>The recipient shall generate an ack message if and only if:</p>
+  <ol>
+    <li>it supports the Message Delivery Receipts protocol; and</li>
+    <li>it is configured to return receipts, either globally or for this recipient.</li>
+  </ol>
+  <p>Otherwise it MUST NOT return a receipt and SHOULD NOT return an error.</p>
+  <example caption='A message delivery receipt'><![CDATA[
+<message
+    from='kingrichard@royalty.england.lit/throne'
+    id='bi29sg183b4v'
+    to='northumberland@shakespeare.lit/westminster'>
+  <received xmlns='urn:xmpp:receipts' id='richard2-4.1.247'/>
+</message>
+]]></example>
+  <p>When the recipient sends an ack message, it SHOULD ensure that the message stanza contains only one child element, namely the &lt;received/&gt; element qualified by the 'urn:xmpp:receipts' namespace, which MUST include an 'id' attribute that echoes the 'id' attribute of the content message. Naturally, intermediate entities might add other extension elements to the message when routing or delivering the receipt message, e.g., a &lt;delay/&gt; element as specified in &xep0203;.</p>
+  <p class='box'>Note: It is a good practice to use the same message type as the message that requested the receipt, however a client SHOULD also accept receipts with a different message type. When sending a Receipt for a type='groupchat' message (which is NOT RECOMMENDED), the Receipt must be sent to the bare JID of the room and not to the full JID of the sender.</p>
+</section1>
+
+<section1 topic='Security Considerations' anchor='security'>
+  <p>It is possible for a recipient to leak its presence when returning message delivery receipts; therefore, a recipient SHOULD NOT return message delivery receipts to senders who are not otherwise authorized to view its presence.</p>
+</section1>
+
+<section1 topic='IANA Considerations' anchor='iana'>
+  <p>No interaction with &IANA; is necessary as a result of this document.</p>
+</section1>
+
+<section1 topic='XMPP Registrar Considerations' anchor='registrar'>
+  <section2 topic='Protocol Namespaces' anchor='ns'>
+    <p>The &REGISTRAR; includes "urn:xmpp:receipts" in its registry of protocol namespaces (see &NAMESPACES;).</p>
+  </section2>
+</section1>
+
+<section1 topic='XML Schema' anchor='schema'>
+  <code><![CDATA[
+<?xml version='1.0' encoding='UTF-8'?>
+
+<xs:schema
+    xmlns:xs='http://www.w3.org/2001/XMLSchema'
+    targetNamespace='urn:xmpp:receipts'
+    xmlns='urn:xmpp:receipts'
+    elementFormDefault='qualified'>
+
+  <xs:annotation>
+    <xs:documentation>
+      The protocol documented by this schema is defined in
+      XEP-0184: http://xmpp.org/extensions/xep-0184.html
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:element name='received'>
+    <xs:complexType>
+      <xs:simpleContent>
+        <xs:extension base='empty'>
+          <xs:attribute name='id' type='xs:string' use='required'/>
+        </xs:extension>
+      </xs:simpleContent>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name='request' type='empty'/>
+
+  <xs:simpleType name='empty'>
+    <xs:restriction base='xs:string'>
+      <xs:enumeration value=''/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>
+]]></code>
+</section1>
+
+<section1 topic='Acknowledgements' anchor='ack'>
+  <p>Thanks to Steven te Brinke, Bruce Campbell, Joe Kemp, Kevin Smith, Remko Tronçon, Matthew Wild, and Kurt Zeilenga for their input.</p>
+</section1>
+
+</xep>
