@@ -34,15 +34,7 @@ int mock_write(void* ud, const char* data, size_t len) {
 }
 
 int setup_test_db(const char** db_path_out) {
-  /* Initialize and register handlers once per test process. */
-  static int handlers_initialized = 0;
-  if (!handlers_initialized) {
-    log_init();
-    log_silence();
-    server_init();
-    storage_db_close();  /* server_init opens DB; we re-open below with test path */
-    handlers_initialized = 1;
-  }
+  extern server_config_t server_config;
 
   const char* tmpdir = getenv("TMPDIR");
   if (!tmpdir || tmpdir[0] == '\0') tmpdir = P_tmpdir;
@@ -57,8 +49,21 @@ int setup_test_db(const char** db_path_out) {
   close(fd);
   unlink(path);  /* SQLite creates the file itself */
 
-  extern server_config_t server_config;
   snprintf(server_config.db_path, sizeof(server_config.db_path), "%s", path);
+
+  /* Initialize handlers once per test process. db_path must be set first so
+   * server_init's storage_db_open succeeds. */
+  static int handlers_initialized = 0;
+  if (!handlers_initialized) {
+    log_init();
+    log_silence();
+    if (server_init() != 0) {
+      fprintf(stderr, "setup_test_db: server_init failed\n");
+      return -1;
+    }
+    storage_db_close();  /* re-open below with fresh per-test path */
+    handlers_initialized = 1;
+  }
 
   /* Open via the migration system so all schema versions are applied. */
   sqlite3* db;
