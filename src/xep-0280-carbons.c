@@ -30,7 +30,7 @@ typedef struct {
   uint64_t last_active;
   int priority;
   int carbons_enabled;
-  char bound_jid[3073];
+  char bound_jid[JID_BUF_SIZE];
 } session_entry_t;
 
 extern session_entry_t g_sessions[SESSION_TABLE_CAP];
@@ -58,7 +58,7 @@ void xmpp_session_table_for_each_carbon_resource(const char* bare_jid,
                                                   const void* ud) {
   for (int i = 0; i < g_session_count; i++) {
     if (exclude_full_jid && strcmp(g_sessions[i].bound_jid, exclude_full_jid) == 0) continue;
-    char bare[3073];
+    char bare[JID_BUF_SIZE];
     const char* slash = strchr(g_sessions[i].bound_jid, '/');
     size_t len = slash ? (size_t)(slash - g_sessions[i].bound_jid) :
                          strlen(g_sessions[i].bound_jid);

@@ -269,7 +269,7 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   xmpp_stanza_t* body_el = xmpp_stanza_get_child_by_name(stanza, "body");
   char* body_text = body_el ? xmpp_stanza_get_text(body_el) : NULL;
 
-  char to_bare[3073];
+  char to_bare[JID_BUF_SIZE];
   msg_bare_jid(to_attr, to_bare, sizeof(to_bare));
   const char* to_resource = msg_resource(to_attr);
 
@@ -298,7 +298,7 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   }
 
   /* Bare JID routing. */
-  char sender_bare[3073];
+  char sender_bare[JID_BUF_SIZE];
   msg_bare_jid(ctx->bound_jid, sender_bare, sizeof(sender_bare));
 
   if (strcmp(to_bare, sender_bare) == 0) {
@@ -317,7 +317,7 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     }
   } else {
     /* Normal bare-JID routing: pick best resource. */
-    char best_jid[3073];
+    char best_jid[JID_BUF_SIZE];
     if (xmpp_session_table_best_resource(to_bare, best_jid, sizeof(best_jid)) == 0) {
       if (build_message(fwd, &fwd_len, sizeof(fwd), ctx->bound_jid, best_jid, msg_type, msg_id,
                         body_text) == 0) {

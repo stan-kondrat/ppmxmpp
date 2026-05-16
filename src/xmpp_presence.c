@@ -158,7 +158,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
   }
 
   /* Strip resource from to= to get target bare JID. */
-  char to_bare[3073];
+  char to_bare[JID_BUF_SIZE];
   xmpp_session_bare_jid(to_attr, to_bare, sizeof(to_bare));
 
   stump_d("presence %s: from=%s to=%s", type, from_bare, to_bare);
@@ -447,7 +447,7 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   const char* type = xmpp_stanza_get_attribute(stanza, "type");
   const char* to   = xmpp_stanza_get_attribute(stanza, "to");
 
-  char bare_jid[3073];
+  char bare_jid[JID_BUF_SIZE];
   xmpp_session_bare_jid(ctx->bound_jid, bare_jid, sizeof(bare_jid));
 
   /* Subscription stanzas: RFC 6121 §3.

@@ -23,9 +23,9 @@
 
 #include <sys/stat.h>
 
-#define READ_BUF_SIZE 65536
-/* TLS input buffer: must hold at least one full TLS record (max 16 KiB + header). */
-#define TLS_IN_BUF_SIZE (READ_BUF_SIZE + 16384)
+#define READ_BUF_SIZE 16384
+/* TLS record max payload is 16 KiB; add 5-byte header + 256-byte MAC overhead. */
+#define TLS_IN_BUF_SIZE (16384 + 512)
 
 /* Per-connection state.  client must be first so (conn_t *) == (uv_handle_t *).
  */
@@ -67,7 +67,7 @@ static void on_conn_close(uv_handle_t* handle) {
   /* RFC 6121 §4.4.2: broadcast unavailable on ungraceful disconnect if the
    * session had sent initial presence (registered in the presence table). */
   if (conn->xmpp.bound_jid[0] != '\0') {
-    char bare_jid[3073];
+    char bare_jid[JID_BUF_SIZE];
     const char* slash = strchr(conn->xmpp.bound_jid, '/');
     size_t bare_len = slash ? (size_t)(slash - conn->xmpp.bound_jid)
                             : strlen(conn->xmpp.bound_jid);

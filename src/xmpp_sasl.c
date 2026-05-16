@@ -173,6 +173,7 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
   const char* sql = "SELECT password_plain, disabled FROM users WHERE jid = ?";
   if (storage_db_prepare(db, sql, &stmt) != 0) {
     stump_er("SASL PLAIN: prepare failed");
+    free(decoded);
     storage_db_close();
     return SASL_TERMINAL;
   }
@@ -182,6 +183,7 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
   if (rc != SQLITE_ROW) {
     stump_i("SASL PLAIN: user not found: %s", bare_jid);
     storage_db_reset(stmt);
+    free(decoded);
     storage_db_close();
     return -1;
   }
@@ -193,6 +195,7 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
   if (disabled) {
     stump_i("SASL PLAIN: account disabled: %s", bare_jid);
     free(stored_pw);
+    free(decoded);
     storage_db_close();
     return -2;
   }
@@ -203,6 +206,7 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
   if (!stored_pw || strlen(stored_pw) != pw_len || !ct_memeq(stored_pw, password, pw_len)) {
     stump_i("SASL PLAIN: bad password for: %s", bare_jid);
     free(stored_pw);
+    free(decoded);
     storage_db_close();
     return -1;
   }
@@ -218,12 +222,14 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
     authzid_str[az_copy] = '\0';
     if (strcmp(authzid_str, bare_jid) != 0) {
       stump_i("SASL PLAIN: authzid mismatch: '%s' vs '%s'", authzid_str, bare_jid);
+      free(decoded);
       storage_db_close();
       return -2;
     }
   }
 
   stump_i("SASL PLAIN: authenticated: %s", bare_jid);
+  free(decoded);
   storage_db_close();
   return 0;
 }

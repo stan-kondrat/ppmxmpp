@@ -19,7 +19,7 @@ typedef struct {
   uint64_t last_active; /* monotonic nanoseconds; updated on register and activity */
   int priority;         /* <presence><priority> value, default 0 */
   int carbons_enabled;  /* XEP-0280 carbons opt-in for this resource */
-  char bound_jid[3073];
+  char bound_jid[JID_BUF_SIZE];
 } session_entry_t;
 
 session_entry_t g_sessions[SESSION_TABLE_CAP];
@@ -79,7 +79,7 @@ void xmpp_session_table_register(xmpp_session_t* ctx, xmpp_write_fn write_fn, vo
   stump_d("session: registered %s (%d sessions)", e->bound_jid, g_session_count);
 
   /* Drain offline messages for this user (XEP-0160). */
-  char bare_jid[3073];
+  char bare_jid[JID_BUF_SIZE];
   xmpp_session_bare_jid(ctx->bound_jid, bare_jid, sizeof(bare_jid));
   stump_i("session: about to drain offline messages for %s", bare_jid);
   if (offline_drain(bare_jid, write_fn, write_ud) != 0) {
@@ -130,7 +130,7 @@ void xmpp_session_table_touch(const char* bound_jid) {
 int xmpp_session_table_best_resource(const char* bare_jid, char* out_full_jid, size_t out_size) {
   int best = -1;
   for (int i = 0; i < g_session_count; i++) {
-    char bare[3073];
+    char bare[JID_BUF_SIZE];
     xmpp_session_bare_jid(g_sessions[i].bound_jid, bare, sizeof(bare));
     if (strcmp(bare, bare_jid) != 0) continue;
     if (best < 0) {
@@ -152,7 +152,7 @@ void xmpp_session_table_broadcast_except(const char* bare_jid, const char* exclu
                                          const char* data, size_t len) {
   for (int i = 0; i < g_session_count; i++) {
     if (strcmp(g_sessions[i].bound_jid, exclude_full_jid) == 0) continue;
-    char bare[3073];
+    char bare[JID_BUF_SIZE];
     xmpp_session_bare_jid(g_sessions[i].bound_jid, bare, sizeof(bare));
     if (strcmp(bare, bare_jid) == 0) {
       g_sessions[i].write_fn(g_sessions[i].write_ud, data, len);
@@ -182,7 +182,7 @@ void xmpp_session_table_reset_all(void) {
 /* Deliver stanza to all online resources of target_bare. */
 void xmpp_session_table_broadcast_to_bare(const char* target_bare, const char* data, size_t len) {
   for (int i = 0; i < g_session_count; i++) {
-    char bare[3073];
+    char bare[JID_BUF_SIZE];
     xmpp_session_bare_jid(g_sessions[i].bound_jid, bare, sizeof(bare));
     if (strcmp(bare, target_bare) == 0) {
       g_sessions[i].write_fn(g_sessions[i].write_ud, data, len);
@@ -199,7 +199,7 @@ void xmpp_session_table_for_each_resource(const char* bare_jid, const char* excl
                                            const void* ud) {
   for (int i = 0; i < g_session_count; i++) {
     if (exclude_full_jid && strcmp(g_sessions[i].bound_jid, exclude_full_jid) == 0) continue;
-    char bare[3073];
+    char bare[JID_BUF_SIZE];
     xmpp_session_bare_jid(g_sessions[i].bound_jid, bare, sizeof(bare));
     if (strcmp(bare, bare_jid) == 0) {
       cb(g_sessions[i].bound_jid, g_sessions[i].write_fn, g_sessions[i].write_ud, ud);
