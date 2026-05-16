@@ -1,5 +1,6 @@
 #include "xmpp.h"
 #include "xmpp_iq.h"
+#include "xmpp_message.h"
 #include "xmpp_presence.h"
 #include "xmpp_sasl.h"
 
@@ -803,6 +804,8 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
       xmpp_iq_dispatch(ctx, stanza);
     } else if (strcmp(sname, "presence") == 0) {
       xmpp_presence_handle(ctx, stanza);
+    } else if (strcmp(sname, "message") == 0) {
+      xmpp_message_handle(ctx, stanza);
     }
     break;
   }

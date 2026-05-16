@@ -1,7 +1,6 @@
 #include "xmpp_presence.h"
 
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,96 +9,17 @@
 #include "strophe.h"
 #include "stumpless.h"
 #include "xmpp_iq_buf.h"
-
-/* ------------------------------------------------------------------ */
-/*  Session registry                                                   */
-/* ------------------------------------------------------------------ */
-
-#define SESSION_TABLE_CAP 256
-
-typedef struct {
-  char bound_jid[3073];
-  xmpp_write_fn write_fn;
-  void* write_ud;
-} session_entry_t;
-
-static session_entry_t g_sessions[SESSION_TABLE_CAP];
-static int g_session_count = 0;
-
-void presence_session_register(xmpp_session_t* ctx, xmpp_write_fn write_fn, void* write_ud) {
-  if (!ctx->bound_jid[0]) return;
-
-  /* Replace existing entry for this JID (re-bind). */
-  for (int i = 0; i < g_session_count; i++) {
-    if (strcmp(g_sessions[i].bound_jid, ctx->bound_jid) == 0) {
-      g_sessions[i].write_fn = write_fn;
-      g_sessions[i].write_ud = write_ud;
-      return;
-    }
-  }
-
-  if (g_session_count >= SESSION_TABLE_CAP) {
-    stump_er("presence: session table full, cannot register %s", ctx->bound_jid);
-    return;
-  }
-
-  session_entry_t* e = &g_sessions[g_session_count++];
-  strncpy(e->bound_jid, ctx->bound_jid, sizeof(e->bound_jid) - 1);
-  e->bound_jid[sizeof(e->bound_jid) - 1] = '\0';
-  e->write_fn = write_fn;
-  e->write_ud = write_ud;
-  stump_d("presence: registered %s (%d sessions)", e->bound_jid, g_session_count);
-}
-
-void presence_session_reset_all(void) {
-  g_session_count = 0;
-}
-
-void presence_session_unregister(const char* bound_jid) {
-  for (int i = 0; i < g_session_count; i++) {
-    if (strcmp(g_sessions[i].bound_jid, bound_jid) == 0) {
-      /* Swap with last entry to keep table compact. */
-      g_sessions[i] = g_sessions[--g_session_count];
-      stump_d("presence: unregistered %s (%d sessions)", bound_jid, g_session_count);
-      return;
-    }
-  }
-}
-
-int presence_session_write(const char* bound_jid, const char* data, size_t len) {
-  for (int i = 0; i < g_session_count; i++) {
-    if (strcmp(g_sessions[i].bound_jid, bound_jid) == 0) {
-      return g_sessions[i].write_fn(g_sessions[i].write_ud, data, len);
-    }
-  }
-  stump_er("presence_session_write: session not found for '%s'", bound_jid);
-  return -1;
-}
+#include "xmpp_session.h"
 
 /* ------------------------------------------------------------------ */
 /*  Internal helpers                                                   */
 /* ------------------------------------------------------------------ */
 
-/* Extract bare JID (user@domain) from a full JID. */
-static void bare_jid_from_full(const char* full, char* out, size_t out_size) {
-  const char* slash = strchr(full, '/');
-  size_t len = slash ? (size_t)(slash - full) : strlen(full);
-  if (len >= out_size) len = out_size - 1;
-  memcpy(out, full, len);
-  out[len] = '\0';
-}
-
 /* Broadcast a presence stanza string to all registered sessions whose
  * bare JID matches target_bare (i.e. all resources of that user). */
 static void broadcast_to_bare_jid(const char* target_bare, const char* stanza,
                                    size_t stanza_len) {
-  for (int i = 0; i < g_session_count; i++) {
-    char bare[3073];
-    bare_jid_from_full(g_sessions[i].bound_jid, bare, sizeof(bare));
-    if (strcmp(bare, target_bare) == 0) {
-      g_sessions[i].write_fn(g_sessions[i].write_ud, stanza, stanza_len);
-    }
-  }
+  xmpp_session_table_broadcast_to_bare(target_bare, stanza, stanza_len);
 }
 
 /* Callback context for roster_list broadcast. */
@@ -208,6 +128,21 @@ static int update_subscription(const char* owner, const char* contact,
   return rc;
 }
 
+/* xmpp_session_table_for_each_resource callback: send A's current presence to B.
+ * ud is a const char* pointing to the bare JID of the recipient. */
+static void send_presence_to_subscriber(const char* full_jid, xmpp_write_fn write_fn,
+                                        void* write_ud, const void* ud) {
+  const char* to_bare = (const char*)ud;
+  size_t plen = 0;
+  char* pstanza = build_presence_stanza(full_jid, NULL, &plen);
+  if (pstanza) {
+    xmpp_session_table_broadcast_to_bare(to_bare, pstanza, plen);
+    free(pstanza);
+  }
+  (void)write_fn;
+  (void)write_ud;
+}
+
 /* Apply RFC 6121 §3.1 state transitions and send roster pushes / stanzas.
  *
  * type: "subscribe" | "subscribed" | "unsubscribe" | "unsubscribed"
@@ -224,7 +159,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
 
   /* Strip resource from to= to get target bare JID. */
   char to_bare[3073];
-  bare_jid_from_full(to_attr, to_bare, sizeof(to_bare));
+  xmpp_session_bare_jid(to_attr, to_bare, sizeof(to_bare));
 
   stump_d("presence %s: from=%s to=%s", type, from_bare, to_bare);
 
@@ -290,7 +225,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
       iq_append(buf, &len, sizeof(buf), "<presence from='%s' to='%s' type='subscribe'/>",
                 from_bare, to_bare);
       broadcast_to_bare_jid(to_bare, buf, len);
-      /* TODO (Step 10+): queue for offline B */
+      /* TODO (Step 11): queue for offline B */
     }
 
   } else if (strcmp(type, "subscribed") == 0) {
@@ -341,18 +276,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     /* If B now receives A's presence (new_b_roster is "from" or "both") and A is online,
      * send A's current presence to B. */
     if (strcmp(new_b_roster, "from") == 0 || strcmp(new_b_roster, "both") == 0) {
-      for (int i = 0; i < g_session_count; i++) {
-        char s_bare[3073];
-        bare_jid_from_full(g_sessions[i].bound_jid, s_bare, sizeof(s_bare));
-        if (strcmp(s_bare, to_bare) == 0) {
-          size_t plen = 0;
-          char* pstanza = build_presence_stanza(g_sessions[i].bound_jid, NULL, &plen);
-          if (pstanza) {
-            broadcast_to_bare_jid(from_bare, pstanza, plen);
-            free(pstanza);
-          }
-        }
-      }
+      xmpp_session_table_for_each_resource(to_bare, NULL, send_presence_to_subscriber, from_bare);
     }
 
   } else if (strcmp(type, "unsubscribe") == 0) {
@@ -471,14 +395,7 @@ static void broadcast_presence(const char* from_bare_jid, const char* from_full_
   }
 
   /* 2. Own other resources (RFC 6121 §4.2.2 / §4.4.2). */
-  for (int i = 0; i < g_session_count; i++) {
-    char bare[3073];
-    bare_jid_from_full(g_sessions[i].bound_jid, bare, sizeof(bare));
-    if (strcmp(bare, from_bare_jid) == 0 &&
-        strcmp(g_sessions[i].bound_jid, from_full_jid) != 0) {
-      g_sessions[i].write_fn(g_sessions[i].write_ud, stanza, stanza_len);
-    }
-  }
+  xmpp_session_table_broadcast_except(from_bare_jid, from_full_jid, stanza, stanza_len);
 
   free(stanza);
 }
@@ -492,7 +409,7 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   const char* to   = xmpp_stanza_get_attribute(stanza, "to");
 
   char bare_jid[3073];
-  bare_jid_from_full(ctx->bound_jid, bare_jid, sizeof(bare_jid));
+  xmpp_session_bare_jid(ctx->bound_jid, bare_jid, sizeof(bare_jid));
 
   /* Subscription stanzas: RFC 6121 §3.
    * Must be checked before the directed-presence path because they also
@@ -516,7 +433,7 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
       rc = iq_append(buf, &len, IQ_BUF_SIZE, "<presence from='%s' to='%s'/>",
                      ctx->bound_jid, to);
     }
-    if (rc == 0 && presence_session_write(to, buf, len) != 0) {
+    if (rc == 0 && xmpp_session_table_write(to, buf, len) != 0) {
       broadcast_to_bare_jid(to, buf, len);
     }
     free(buf);
@@ -526,7 +443,7 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   /* Unavailable presence: RFC 6121 §4.4. */
   if (type && strcmp(type, "unavailable") == 0) {
     broadcast_presence(bare_jid, ctx->bound_jid, "unavailable");
-    presence_session_unregister(ctx->bound_jid);
+    xmpp_session_table_unregister(ctx->bound_jid);
     return;
   }
 
@@ -534,7 +451,21 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
    * Register the session now — a client is not considered available until
    * it sends initial presence, so we defer registration to this point. */
   if (!type || type[0] == '\0') {
-    presence_session_register(ctx, ctx->write_fn, ctx->write_ud);
+    xmpp_session_table_register(ctx, ctx->write_fn, ctx->write_ud);
+
+    /* RFC 6121 §4.7.2.1: parse optional <priority> child. */
+    xmpp_stanza_t* prio_el = xmpp_stanza_get_child_by_name(stanza, "priority");
+    if (prio_el) {
+      char* prio_text = xmpp_stanza_get_text(prio_el);
+      if (prio_text) {
+        int prio = (int)strtol(prio_text, NULL, 10);
+        if (prio < -128) prio = -128;
+        if (prio > 127) prio = 127;
+        xmpp_session_table_update_priority(ctx->bound_jid, prio);
+        free(prio_text);
+      }
+    }
+
     broadcast_presence(bare_jid, ctx->bound_jid, NULL);
     return;
   }
@@ -543,17 +474,10 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
 }
 
 void xmpp_presence_on_disconnect(const char* bound_jid, const char* bare_jid) {
-  /* Only broadcast if this session was registered (i.e. had sent initial presence). */
-  int registered = 0;
-  for (int i = 0; i < g_session_count; i++) {
-    if (strcmp(g_sessions[i].bound_jid, bound_jid) == 0) {
-      registered = 1;
-      break;
-    }
-  }
-  if (!registered) return;
+  /* Deliver unavailable only if this session had sent initial presence (is registered). */
+  if (!xmpp_session_table_is_registered(bound_jid)) return;
 
   /* RFC 6121 §4.4.2: server generates unavailable on ungraceful disconnect. */
   broadcast_presence(bare_jid, bound_jid, "unavailable");
-  presence_session_unregister(bound_jid);
+  xmpp_session_table_unregister(bound_jid);
 }

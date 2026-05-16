@@ -13,6 +13,7 @@
 #include "test_xmpp_helpers.h"
 #include "xmpp.h"
 #include "xmpp_presence.h"
+#include "xmpp_session.h"
 
 /* ------------------------------------------------------------------ */
 /*  Per-test write sink                                                */
@@ -59,13 +60,13 @@ static int add_roster_entry(const char* owner, const char* contact, const char* 
 
 static int presence_test_setup(void** state) {
   (void)state;
-  presence_session_reset_all();
+  xmpp_session_table_reset_all();
   return 0;
 }
 
 static int presence_test_teardown(void** state) {
   (void)state;
-  presence_session_reset_all();
+  xmpp_session_table_reset_all();
   storage_db_close();
   return 0;
 }
@@ -89,18 +90,18 @@ static void test_register_and_write(void** state) {
 
   xmpp_session_t ctx;
   make_session(&ctx, "alice@localhost/res1");
-  presence_session_register(&ctx, sink_write, &sink);
+  xmpp_session_table_register(&ctx, sink_write, &sink);
 
-  int rc = presence_session_write("alice@localhost/res1", "hello", 5);
+  int rc = xmpp_session_table_write("alice@localhost/res1", "hello", 5);
   assert_int_equal(rc, 0);
   assert_true(sink_contains(&sink, "hello"));
 
-  presence_session_unregister("alice@localhost/res1");
+  xmpp_session_table_unregister("alice@localhost/res1");
 }
 
 static void test_write_unknown_session_returns_minus1(void** state) {
   (void)state;
-  int rc = presence_session_write("nobody@localhost/x", "data", 4);
+  int rc = xmpp_session_table_write("nobody@localhost/x", "data", 4);
   assert_int_equal(rc, -1);
 }
 
@@ -110,10 +111,10 @@ static void test_unregister_removes_session(void** state) {
 
   xmpp_session_t ctx;
   make_session(&ctx, "bob@localhost/r1");
-  presence_session_register(&ctx, sink_write, &sink);
-  presence_session_unregister("bob@localhost/r1");
+  xmpp_session_table_register(&ctx, sink_write, &sink);
+  xmpp_session_table_unregister("bob@localhost/r1");
 
-  int rc = presence_session_write("bob@localhost/r1", "x", 1);
+  int rc = xmpp_session_table_write("bob@localhost/r1", "x", 1);
   assert_int_equal(rc, -1);
 }
 
@@ -124,14 +125,14 @@ static void test_re_register_updates_callbacks(void** state) {
 
   xmpp_session_t ctx;
   make_session(&ctx, "carol@localhost/r");
-  presence_session_register(&ctx, sink_write, &sink1);
-  presence_session_register(&ctx, sink_write, &sink2);
+  xmpp_session_table_register(&ctx, sink_write, &sink1);
+  xmpp_session_table_register(&ctx, sink_write, &sink2);
 
-  presence_session_write("carol@localhost/r", "hi", 2);
+  xmpp_session_table_write("carol@localhost/r", "hi", 2);
   assert_int_equal(sink1.len, 0);  /* old sink not written */
   assert_true(sink_contains(&sink2, "hi"));
 
-  presence_session_unregister("carol@localhost/r");
+  xmpp_session_table_unregister("carol@localhost/r");
 }
 
 /* ------------------------------------------------------------------ */
@@ -151,7 +152,7 @@ static void test_initial_presence_reaches_subscriber(void** state) {
   write_sink_t contact2_sink = {.len = 0};
   xmpp_session_t contact2;
   make_session(&contact2, "contact2@localhost/phone");
-  presence_session_register(&contact2, sink_write, &contact2_sink);
+  xmpp_session_table_register(&contact2, sink_write, &contact2_sink);
 
   /* testuser goes online via the full XMPP handshake. */
   xmpp_session_t ctx;
@@ -165,7 +166,7 @@ static void test_initial_presence_reaches_subscriber(void** state) {
   assert_true(sink_contains(&contact2_sink, "<presence from='testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("contact2@localhost/phone");
+  xmpp_session_table_unregister("contact2@localhost/phone");
   teardown_test_db();
 }
 
@@ -180,7 +181,7 @@ static void test_initial_presence_not_sent_to_non_subscriber(void** state) {
   write_sink_t other_sink = {.len = 0};
   xmpp_session_t other;
   make_session(&other, "other@localhost/pc");
-  presence_session_register(&other, sink_write, &other_sink);
+  xmpp_session_table_register(&other, sink_write, &other_sink);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -192,7 +193,7 @@ static void test_initial_presence_not_sent_to_non_subscriber(void** state) {
   assert_int_equal(other_sink.len, 0);
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("other@localhost/pc");
+  xmpp_session_table_unregister("other@localhost/pc");
   teardown_test_db();
 }
 
@@ -206,7 +207,7 @@ static void test_initial_presence_sent_to_both_subscription(void** state) {
   write_sink_t buddy_sink = {.len = 0};
   xmpp_session_t buddy;
   make_session(&buddy, "buddy@localhost/web");
-  presence_session_register(&buddy, sink_write, &buddy_sink);
+  xmpp_session_table_register(&buddy, sink_write, &buddy_sink);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -217,7 +218,7 @@ static void test_initial_presence_sent_to_both_subscription(void** state) {
   assert_true(sink_contains(&buddy_sink, "<presence from='testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("buddy@localhost/web");
+  xmpp_session_table_unregister("buddy@localhost/web");
   teardown_test_db();
 }
 
@@ -234,7 +235,7 @@ static void test_initial_presence_sent_to_own_other_resource(void** state) {
   write_sink_t res2_sink = {.len = 0};
   xmpp_session_t res2;
   make_session(&res2, "testuser@localhost/mobile");
-  presence_session_register(&res2, sink_write, &res2_sink);
+  xmpp_session_table_register(&res2, sink_write, &res2_sink);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -246,7 +247,7 @@ static void test_initial_presence_sent_to_own_other_resource(void** state) {
   assert_true(sink_contains(&res2_sink, "<presence from='testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("testuser@localhost/mobile");
+  xmpp_session_table_unregister("testuser@localhost/mobile");
   teardown_test_db();
 }
 
@@ -264,7 +265,7 @@ static void test_unavailable_presence_reaches_subscriber(void** state) {
   write_sink_t watcher_sink = {.len = 0};
   xmpp_session_t watcher;
   make_session(&watcher, "watcher@localhost/lap");
-  presence_session_register(&watcher, sink_write, &watcher_sink);
+  xmpp_session_table_register(&watcher, sink_write, &watcher_sink);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -281,7 +282,7 @@ static void test_unavailable_presence_reaches_subscriber(void** state) {
   assert_true(sink_contains(&watcher_sink, "from='testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("watcher@localhost/lap");
+  xmpp_session_table_unregister("watcher@localhost/lap");
   teardown_test_db();
 }
 
@@ -300,7 +301,7 @@ static void test_unavailable_unregisters_session(void** state) {
   xmpp_feed(&ctx, "<presence type='unavailable'/>",
             strlen("<presence type='unavailable'/>"), mock_write, NULL);
 
-  assert_int_equal(presence_session_write(ctx.bound_jid, "x", 1), -1);
+  assert_int_equal(xmpp_session_table_write(ctx.bound_jid, "x", 1), -1);
 
   xmpp_session_cleanup(&ctx);
   teardown_test_db();
@@ -318,7 +319,7 @@ static void test_directed_presence_delivered_to_full_jid(void** state) {
   write_sink_t target_sink = {.len = 0};
   xmpp_session_t target;
   make_session(&target, "friend@localhost/desk");
-  presence_session_register(&target, sink_write, &target_sink);
+  xmpp_session_table_register(&target, sink_write, &target_sink);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -331,7 +332,7 @@ static void test_directed_presence_delivered_to_full_jid(void** state) {
   assert_true(sink_contains(&target_sink, "to='friend@localhost/desk'"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("friend@localhost/desk");
+  xmpp_session_table_unregister("friend@localhost/desk");
   teardown_test_db();
 }
 
@@ -345,8 +346,8 @@ static void test_directed_presence_delivered_to_bare_jid(void** state) {
   xmpp_session_t res_a, res_b;
   make_session(&res_a, "multi@localhost/a");
   make_session(&res_b, "multi@localhost/b");
-  presence_session_register(&res_a, sink_write, &sink_a);
-  presence_session_register(&res_b, sink_write, &sink_b);
+  xmpp_session_table_register(&res_a, sink_write, &sink_a);
+  xmpp_session_table_register(&res_b, sink_write, &sink_b);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -360,8 +361,8 @@ static void test_directed_presence_delivered_to_bare_jid(void** state) {
   assert_true(sink_contains(&sink_b, "from='testuser@localhost/"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("multi@localhost/a");
-  presence_session_unregister("multi@localhost/b");
+  xmpp_session_table_unregister("multi@localhost/a");
+  xmpp_session_table_unregister("multi@localhost/b");
   teardown_test_db();
 }
 
@@ -379,7 +380,7 @@ static void test_disconnect_broadcasts_unavailable(void** state) {
   write_sink_t watch2_sink = {.len = 0};
   xmpp_session_t watch2;
   make_session(&watch2, "watch2@localhost/x");
-  presence_session_register(&watch2, sink_write, &watch2_sink);
+  xmpp_session_table_register(&watch2, sink_write, &watch2_sink);
 
   xmpp_session_t ctx;
   assert_int_equal(feed_to_online(&ctx), 0);
@@ -400,7 +401,7 @@ static void test_disconnect_broadcasts_unavailable(void** state) {
   assert_true(sink_contains(&watch2_sink, "type='unavailable'"));
 
   xmpp_session_cleanup(&ctx);
-  presence_session_unregister("watch2@localhost/x");
+  xmpp_session_table_unregister("watch2@localhost/x");
   teardown_test_db();
 }
 
@@ -489,7 +490,7 @@ static void test_subscribe_delivered_to_online_target(void** state) {
   xmpp_session_t b_ctx;
   assert_int_equal(feed_contact_to_online(&b_ctx), 0);
   /* Re-register b_ctx with b_sink so subscription stanzas land there. */
-  presence_session_register(&b_ctx, sink_write, &b_sink);
+  xmpp_session_table_register(&b_ctx, sink_write, &b_sink);
 
   /* A session (testuser). */
   xmpp_session_t a_ctx;
@@ -536,7 +537,7 @@ static void test_subscribed_updates_both_rosters(void** state) {
   write_sink_t a_sink = {.len = 0};
   xmpp_session_t a_ctx;
   assert_int_equal(feed_to_online(&a_ctx), 0);
-  presence_session_register(&a_ctx, sink_write, &a_sink);
+  xmpp_session_table_register(&a_ctx, sink_write, &a_sink);
 
   /* B session online — sends subscribed to A. */
   xmpp_session_t b_ctx;
@@ -583,10 +584,10 @@ static void test_mutual_subscribe_results_in_both(void** state) {
   xmpp_session_t a_ctx, b_ctx;
 
   assert_int_equal(feed_to_online(&a_ctx), 0);
-  presence_session_register(&a_ctx, sink_write, &a_sink);
+  xmpp_session_table_register(&a_ctx, sink_write, &a_sink);
 
   assert_int_equal(feed_contact_to_online(&b_ctx), 0);
-  presence_session_register(&b_ctx, sink_write, &b_sink);
+  xmpp_session_table_register(&b_ctx, sink_write, &b_sink);
 
   /* A subscribes to B. */
   const char* sub_ab = "<presence type='subscribe' to='contactuser@localhost'/>";
@@ -644,7 +645,7 @@ static void test_unsubscribe_removes_to_direction(void** state) {
   xmpp_session_t a_ctx, b_ctx;
   assert_int_equal(feed_to_online(&a_ctx), 0);
   assert_int_equal(feed_contact_to_online(&b_ctx), 0);
-  presence_session_register(&b_ctx, sink_write, &b_sink);
+  xmpp_session_table_register(&b_ctx, sink_write, &b_sink);
 
   /* A sends unsubscribe to B. */
   const char* unsub = "<presence type='unsubscribe' to='contactuser@localhost'/>";
@@ -687,7 +688,7 @@ static void test_unsubscribed_clears_ask(void** state) {
   write_sink_t a_sink = {.len = 0};
   xmpp_session_t a_ctx, b_ctx;
   assert_int_equal(feed_to_online(&a_ctx), 0);
-  presence_session_register(&a_ctx, sink_write, &a_sink);
+  xmpp_session_table_register(&a_ctx, sink_write, &a_sink);
   assert_int_equal(feed_contact_to_online(&b_ctx), 0);
 
   /* B rejects. */

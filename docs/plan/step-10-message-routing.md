@@ -1,6 +1,6 @@
 # Step 10 — Message routing for online users
 
-**Status: ❌ NOT DONE**
+**Status: ✅ DONE**
 
 ## What
 
@@ -16,24 +16,56 @@ Routing rules (RFC 6121 §8):
 - **RFC 6121 §5** — exchanging messages (stanza shape, types).
 - **RFC 6121 §8** — server rules for processing stanzas (the routing table).
 
-## Current state
+## What was built
 
-No `<message>` stanza handler or routing between connections. Requires the session table from Step 8 and the full bound JID from Step 5.
+### `src/xmpp_session.c` + `include/xmpp_session.h`
 
-## What to build
+Session table extracted from `xmpp_presence.c` into its own module. Owns the
+`session_entry_t` array and all lookup/delivery operations.
 
-- Message stanza handler wired into `on_stanza()` for the `RESOURCE_BOUND` state.
-- JID parser: split `to` attribute into localpart, domain, optional resource.
-- Session table lookup (from Step 8) to find the target `conn_t`.
-- Priority/recency tie-breaking when multiple resources are available.
-- Hand-off to offline store (Step 11) when no resource is available.
+Key API:
+- `xmpp_session_table_register/unregister/write` — lifecycle and direct delivery
+- `xmpp_session_table_best_resource` — priority + recency tiebreak lookup
+- `xmpp_session_table_broadcast_except` — fan-out to all resources of a bare JID except one
+- `xmpp_session_table_update_priority` / `xmpp_session_table_touch` — updated by presence and message handlers
+- `xmpp_session_bare_jid` — shared JID utility (strip resource)
 
-## Checkpoint
+Priority and last-active tracking added to `session_entry_t`. Priority is parsed
+from `<presence><priority>` in `xmpp_presence_handle`.
 
-At this point two users can chat in real time. Steps 11 onward make messaging reliable and complete.
+### `src/xmpp_message.c` + `include/xmpp_message.h`
+
+`xmpp_message_handle()` implements RFC 6121 §8:
+
+1. Validates `to=` present and domain matches this server (sends stanza error otherwise).
+2. Extracts `<body>` text, `type`, `id` attributes.
+3. Full JID target → `xmpp_session_table_write`; falls through to bare-JID routing if not found.
+4. Bare JID, self-addressed → `xmpp_session_table_broadcast_except` (all own resources except sender).
+5. Bare JID, other user → `xmpp_session_table_best_resource` then `xmpp_session_table_write`; silently dropped if no resource online (Step 11).
+6. Touches sender's `last_active` on successful delivery.
+
+### `src/xmpp.c`
+
+`on_stanza()` `XMPP_STATE_ONLINE` case extended with:
+```c
+} else if (strcmp(sname, "message") == 0) {
+    xmpp_message_handle(ctx, stanza);
+}
+```
+
+### `tests/xmpp_message.c`
+
+7 cmocka tests:
+- `test_message_a_to_b_full_jid`
+- `test_message_a_to_b_bare_jid`
+- `test_message_bare_jid_priority_tiebreak`
+- `test_message_to_self_bare_jid`
+- `test_message_to_offline_user_silently_dropped`
+- `test_message_missing_to_returns_error`
+- `test_message_reply_b_to_a`
 
 ## Done criteria
 
-- [ ] User A sends a chat message to User B; User B's client receives it.
-- [ ] Reply from B to A is received.
-- [ ] Message to bare JID with multiple resources lands on the correct one per the priority/recency rule.
+- [x] User A sends a chat message to User B; User B's client receives it.
+- [x] Reply from B to A is received.
+- [x] Message to bare JID with multiple resources lands on the correct one per the priority/recency rule.
