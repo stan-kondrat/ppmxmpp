@@ -66,6 +66,7 @@ static int presence_test_setup(void** state) {
 static int presence_test_teardown(void** state) {
   (void)state;
   presence_session_reset_all();
+  storage_db_close();
   return 0;
 }
 
@@ -422,6 +423,295 @@ static void test_disconnect_noop_when_never_sent_presence(void** state) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Subscription helpers                                               */
+/* ------------------------------------------------------------------ */
+
+#include "storage/users.h"
+
+/* Drive a second user (contactuser/testpass) to XMPP_STATE_ONLINE.
+ * setup_test_db() must have been called first. */
+static int feed_contact_to_online(xmpp_session_t* ctx) {
+  sqlite3* db;
+  if (storage_db_open(&db) == 0) {
+    storage_users_create("contactuser@localhost", "testpass");
+    storage_db_close();
+  }
+
+  memset(ctx, 0, sizeof(*ctx));
+  xmpp_session_reset(ctx);
+
+  char buf[512];
+  snprintf(buf, sizeof(buf),
+           "<?xml version='1.0'?>"
+           "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
+           " xmlns='jabber:client' to='localhost' version='1.0'>");
+  if (xmpp_feed(ctx, buf, strlen(buf), mock_write, NULL) != 0) return -1;
+
+  const char* starttls = "<starttls xmlns='urn:ietf:params:xml:ns:xmpp-tls'/>";
+  if (xmpp_feed(ctx, starttls, strlen(starttls), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_STARTTLS_SENT) return -1;
+
+  simulate_starttls(ctx);
+
+  const char* r1 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
+                   " xmlns='jabber:client' to='localhost' version='1.0'>";
+  if (xmpp_feed(ctx, r1, strlen(r1), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_FEATURES_RECEIVED_POST_TLS) return -1;
+
+  if (feed_sasl_plain(ctx, "", "contactuser", "testpass") != 0) return -1;
+
+  const char* r2 = "<stream:stream xmlns:stream='http://etherx.jabber.org/streams'"
+                   " xmlns='jabber:client' to='localhost' version='1.0'>";
+  if (xmpp_feed(ctx, r2, strlen(r2), mock_write, NULL) != 0) return -1;
+
+  const char* bind = "<iq type='set' id='cb1'>"
+                     "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
+                     "<resource>ctest</resource></bind></iq>";
+  if (xmpp_feed(ctx, bind, strlen(bind), mock_write, NULL) != 0) return -1;
+  if (ctx->state != XMPP_STATE_ONLINE) return -1;
+
+  g_write_len = 0;
+  return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Subscription tests (RFC 6121 §3)                                  */
+/* ------------------------------------------------------------------ */
+
+/* A sends subscribe to B — B receives the stanza; A's roster gets ask=subscribe. */
+static void test_subscribe_delivered_to_online_target(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* B session (contactuser). */
+  write_sink_t b_sink = {.len = 0};
+  xmpp_session_t b_ctx;
+  assert_int_equal(feed_contact_to_online(&b_ctx), 0);
+  /* Re-register b_ctx with b_sink so subscription stanzas land there. */
+  presence_session_register(&b_ctx, sink_write, &b_sink);
+
+  /* A session (testuser). */
+  xmpp_session_t a_ctx;
+  assert_int_equal(feed_to_online(&a_ctx), 0);
+
+  /* A sends subscribe to B. */
+  const char* sub = "<presence type='subscribe' to='contactuser@localhost'/>";
+  assert_int_equal(xmpp_feed(&a_ctx, sub, strlen(sub), mock_write, NULL), 0);
+
+  /* B should receive the subscribe stanza. */
+  assert_true(sink_contains(&b_sink, "type='subscribe'"));
+  assert_true(sink_contains(&b_sink, "from='testuser@localhost'"));
+
+  /* A's roster should have ask=1 for contactuser. */
+  storage_roster_item_t item;
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  int rc = storage_roster_get("testuser@localhost", "contactuser@localhost", &item);
+  storage_db_close();
+  assert_int_equal(rc, 0);
+  assert_int_equal(item.ask, 1);
+
+  xmpp_session_cleanup(&a_ctx);
+  xmpp_session_cleanup(&b_ctx);
+  teardown_test_db();
+}
+
+/* B accepts: subscribed → both rosters updated; A gets subscribed stanza. */
+static void test_subscribed_updates_both_rosters(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* Seed: A's roster has B with ask=1, sub=none; B's roster has A with sub=none. */
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  storage_roster_item_t a_item;
+  memset(&a_item, 0, sizeof(a_item));
+  strncpy(a_item.contact_jid, "contactuser@localhost", sizeof(a_item.contact_jid) - 1);
+  strncpy(a_item.subscription, "none", sizeof(a_item.subscription) - 1);
+  a_item.ask = 1;
+  storage_roster_upsert("testuser@localhost", &a_item, NULL, 0);
+  storage_db_close();
+
+  /* A session online to receive roster push. */
+  write_sink_t a_sink = {.len = 0};
+  xmpp_session_t a_ctx;
+  assert_int_equal(feed_to_online(&a_ctx), 0);
+  presence_session_register(&a_ctx, sink_write, &a_sink);
+
+  /* B session online — sends subscribed to A. */
+  xmpp_session_t b_ctx;
+  assert_int_equal(feed_contact_to_online(&b_ctx), 0);
+
+  const char* accept = "<presence type='subscribed' to='testuser@localhost'/>";
+  assert_int_equal(xmpp_feed(&b_ctx, accept, strlen(accept), mock_write, NULL), 0);
+
+  /* A should receive 'subscribed' stanza. */
+  assert_true(sink_contains(&a_sink, "type='subscribed'"));
+
+  /* A's roster for B: subscription should now be 'to', ask cleared. */
+  storage_roster_item_t updated_a;
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  int rc = storage_roster_get("testuser@localhost", "contactuser@localhost", &updated_a);
+  storage_db_close();
+  assert_int_equal(rc, 0);
+  assert_string_equal(updated_a.subscription, "to");
+  assert_int_equal(updated_a.ask, 0);
+
+  /* B's roster for A: subscription should now be 'from'. */
+  storage_roster_item_t updated_b;
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  rc = storage_roster_get("contactuser@localhost", "testuser@localhost", &updated_b);
+  storage_db_close();
+  assert_int_equal(rc, 0);
+  assert_string_equal(updated_b.subscription, "from");
+
+  /* A should have received a roster push showing subscription='to'. */
+  assert_true(sink_contains(&a_sink, "subscription='to'"));
+
+  xmpp_session_cleanup(&a_ctx);
+  xmpp_session_cleanup(&b_ctx);
+  teardown_test_db();
+}
+
+/* Full mutual subscribe flow: both sides end up with subscription='both'. */
+static void test_mutual_subscribe_results_in_both(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  write_sink_t a_sink = {.len = 0}, b_sink = {.len = 0};
+  xmpp_session_t a_ctx, b_ctx;
+
+  assert_int_equal(feed_to_online(&a_ctx), 0);
+  presence_session_register(&a_ctx, sink_write, &a_sink);
+
+  assert_int_equal(feed_contact_to_online(&b_ctx), 0);
+  presence_session_register(&b_ctx, sink_write, &b_sink);
+
+  /* A subscribes to B. */
+  const char* sub_ab = "<presence type='subscribe' to='contactuser@localhost'/>";
+  xmpp_feed(&a_ctx, sub_ab, strlen(sub_ab), mock_write, NULL);
+
+  /* B accepts. */
+  const char* accept_ba = "<presence type='subscribed' to='testuser@localhost'/>";
+  xmpp_feed(&b_ctx, accept_ba, strlen(accept_ba), mock_write, NULL);
+
+  /* B subscribes to A. */
+  a_sink.len = 0;
+  b_sink.len = 0;
+  const char* sub_ba = "<presence type='subscribe' to='testuser@localhost'/>";
+  xmpp_feed(&b_ctx, sub_ba, strlen(sub_ba), mock_write, NULL);
+
+  /* A accepts. */
+  const char* accept_ab = "<presence type='subscribed' to='contactuser@localhost'/>";
+  xmpp_feed(&a_ctx, accept_ab, strlen(accept_ab), mock_write, NULL);
+
+  /* Both rosters should now have subscription='both'. */
+  storage_roster_item_t item_a, item_b;
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  assert_int_equal(storage_roster_get("testuser@localhost", "contactuser@localhost", &item_a), 0);
+  assert_int_equal(storage_roster_get("contactuser@localhost", "testuser@localhost", &item_b), 0);
+  storage_db_close();
+
+  assert_string_equal(item_a.subscription, "both");
+  assert_string_equal(item_b.subscription, "both");
+
+  xmpp_session_cleanup(&a_ctx);
+  xmpp_session_cleanup(&b_ctx);
+  teardown_test_db();
+}
+
+/* A unsubscribes: A loses 'to', B loses 'from'. */
+static void test_unsubscribe_removes_to_direction(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* Seed both sides with subscription='both'. */
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  storage_roster_item_t a_seed, b_seed;
+  memset(&a_seed, 0, sizeof(a_seed));
+  memset(&b_seed, 0, sizeof(b_seed));
+  strncpy(a_seed.contact_jid, "contactuser@localhost", sizeof(a_seed.contact_jid) - 1);
+  strncpy(a_seed.subscription, "both", sizeof(a_seed.subscription) - 1);
+  strncpy(b_seed.contact_jid, "testuser@localhost", sizeof(b_seed.contact_jid) - 1);
+  strncpy(b_seed.subscription, "both", sizeof(b_seed.subscription) - 1);
+  storage_roster_upsert("testuser@localhost", &a_seed, NULL, 0);
+  storage_roster_upsert("contactuser@localhost", &b_seed, NULL, 0);
+  storage_db_close();
+
+  write_sink_t b_sink = {.len = 0};
+  xmpp_session_t a_ctx, b_ctx;
+  assert_int_equal(feed_to_online(&a_ctx), 0);
+  assert_int_equal(feed_contact_to_online(&b_ctx), 0);
+  presence_session_register(&b_ctx, sink_write, &b_sink);
+
+  /* A sends unsubscribe to B. */
+  const char* unsub = "<presence type='unsubscribe' to='contactuser@localhost'/>";
+  xmpp_feed(&a_ctx, unsub, strlen(unsub), mock_write, NULL);
+
+  /* B receives unsubscribe stanza. */
+  assert_true(sink_contains(&b_sink, "type='unsubscribe'"));
+
+  /* A's sub: both→from; B's sub: both→to. */
+  storage_roster_item_t item_a, item_b;
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  assert_int_equal(storage_roster_get("testuser@localhost", "contactuser@localhost", &item_a), 0);
+  assert_int_equal(storage_roster_get("contactuser@localhost", "testuser@localhost", &item_b), 0);
+  storage_db_close();
+
+  assert_string_equal(item_a.subscription, "from");
+  assert_string_equal(item_b.subscription, "to");
+
+  xmpp_session_cleanup(&a_ctx);
+  xmpp_session_cleanup(&b_ctx);
+  teardown_test_db();
+}
+
+/* B refuses: unsubscribed → A's pending ask cleared. */
+static void test_unsubscribed_clears_ask(void** state) {
+  (void)state;
+  const char* db_path = NULL;
+  assert_int_equal(setup_test_db(&db_path), 0);
+
+  /* A has pending ask for B. */
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  storage_roster_item_t a_seed;
+  memset(&a_seed, 0, sizeof(a_seed));
+  strncpy(a_seed.contact_jid, "contactuser@localhost", sizeof(a_seed.contact_jid) - 1);
+  strncpy(a_seed.subscription, "none", sizeof(a_seed.subscription) - 1);
+  a_seed.ask = 1;
+  storage_roster_upsert("testuser@localhost", &a_seed, NULL, 0);
+  storage_db_close();
+
+  write_sink_t a_sink = {.len = 0};
+  xmpp_session_t a_ctx, b_ctx;
+  assert_int_equal(feed_to_online(&a_ctx), 0);
+  presence_session_register(&a_ctx, sink_write, &a_sink);
+  assert_int_equal(feed_contact_to_online(&b_ctx), 0);
+
+  /* B rejects. */
+  const char* refuse = "<presence type='unsubscribed' to='testuser@localhost'/>";
+  xmpp_feed(&b_ctx, refuse, strlen(refuse), mock_write, NULL);
+
+  /* A receives unsubscribed stanza. */
+  assert_true(sink_contains(&a_sink, "type='unsubscribed'"));
+
+  /* A's ask should be cleared. */
+  storage_roster_item_t item_a;
+  { sqlite3* _db; assert_int_equal(storage_db_open(&_db), 0); }
+  int rc = storage_roster_get("testuser@localhost", "contactuser@localhost", &item_a);
+  storage_db_close();
+  assert_int_equal(rc, 0);
+  assert_int_equal(item_a.ask, 0);
+  assert_string_equal(item_a.subscription, "none");
+
+  xmpp_session_cleanup(&a_ctx);
+  xmpp_session_cleanup(&b_ctx);
+  teardown_test_db();
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main                                                               */
 /* ------------------------------------------------------------------ */
 
@@ -450,6 +740,13 @@ int main(void) {
       /* Disconnect */
       cmocka_unit_test_setup_teardown(test_disconnect_broadcasts_unavailable, presence_test_setup, presence_test_teardown),
       cmocka_unit_test_setup_teardown(test_disconnect_noop_when_never_sent_presence, presence_test_setup, presence_test_teardown),
+
+      /* Subscription handshake (RFC 6121 §3) */
+      cmocka_unit_test_setup_teardown(test_subscribe_delivered_to_online_target, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_subscribed_updates_both_rosters, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_mutual_subscribe_results_in_both, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_unsubscribe_removes_to_direction, presence_test_setup, presence_test_teardown),
+      cmocka_unit_test_setup_teardown(test_unsubscribed_clears_ask, presence_test_setup, presence_test_teardown),
   };
   return cmocka_run_group_tests(tests, NULL, NULL);
 }

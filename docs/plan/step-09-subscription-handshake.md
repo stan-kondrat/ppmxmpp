@@ -1,6 +1,6 @@
 # Step 9 — Subscription handshake
 
-**Status: ❌ NOT DONE**
+**Status: ✅ DONE**
 
 ## What
 
@@ -29,5 +29,5 @@ No `<presence type='subscribe/subscribed/unsubscribe/unsubscribed'>` handling. R
 
 ## Done criteria
 
-- [ ] Two real clients perform "Add contact" flow, accept the request, and end up with bidirectional subscription (`both`).
-- [ ] After mutual subscription, both clients see each other's online presence.
+- [x] Two real clients perform "Add contact" flow, accept the request, and end up with bidirectional subscription (`both`).
+- [x] After mutual subscription, both clients see each other's online presence.
