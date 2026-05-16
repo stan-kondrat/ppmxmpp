@@ -25,6 +25,12 @@ Initialize submodules after cloning:
 git submodule update --init --recursive
 ```
 
+### RFC and XEPs source
+
+https://www.rfc-editor.org/rfc/rfc*.txt
+https://github.com/xsf/xeps
+
+
 ## Building
 
 ```

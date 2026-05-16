@@ -19,8 +19,10 @@
 │   ├── xmpp.h                # XMPP protocol module header
 │   ├── xmpp_iq.h             # IQ dispatch module header
 │   ├── xmpp_iq_buf.h         # Inline helpers: iq_append / iq_flush (shared by IQ handlers)
-│   ├── xmpp_sasl.h           # SASL authentication module header (sasl_rc_t + handle_sasl_plain)
+│   ├── xmpp_message.h        # Message routing module header
 │   ├── xmpp_presence.h       # Presence routing module header (session registry + handler)
+│   ├── xmpp_sasl.h           # SASL authentication module header (sasl_rc_t + handle_sasl_plain)
+│   ├── xmpp_session.h        # XMPP session state header
 │   ├── xep-0030-service-discovery.h  # XEP-0030 disco#info handler header
 │   └── xep-0199-ping.h       # XEP-0199 ping handler header
 ├── scripts/                  # Utility scripts
@@ -33,8 +35,10 @@
 │   ├── tls.c                 # TLS certificate/key management
 │   ├── xmpp.c                # XMPP protocol handling (stream negotiation, bind)
 │   ├── xmpp_iq.c             # IQ stanza dispatch (roster, XEP-0030, XEP-0199, errors)
-│   ├── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
+│   ├── xmpp_message.c        # Message routing implementation
 │   ├── xmpp_presence.c       # Presence routing (RFC 6121 §4.2/§4.4/§4.6; session registry)
+│   ├── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
+│   ├── xmpp_session.c        # XMPP session state management
 │   ├── xep-0030-service-discovery.c  # XEP-0030: disco#info handler
 │   └── xep-0199-ping.c       # XEP-0199: ping handler
 ├── test_e2e/                 # End-to-end integration tests (shell scripts)
@@ -56,6 +60,7 @@
 │   ├── test_xmpp_sasl.c      # SASL PLAIN authentication unit tests
 │   ├── test_xmpp_starttls.c  # STARTTLS negotiation unit tests
 │   ├── test_xmpp_state.c     # XMPP state machine unit tests (protocol ordering)
+│   ├── xmpp_message.c        # Message routing unit tests
 │   ├── xmpp_presence.c       # Presence routing unit tests (RFC 6121 §4.2/§4.4/§4.6)
 │   ├── xep-0030-service-discovery.c  # XEP-0030 disco#info integration tests
 │   └── xep-0199-ping.c       # XEP-0199 ping integration tests
@@ -67,13 +72,78 @@
 │   ├── mbedtls/              # TLS / crypto library (CMake)
 │   ├── sqlite/               # Embedded database (Custom make)
 │   └── stumpless/            # Logging library (CMake)
-├── docs/specs/               # RFC/XEP specs cross-checked against the implementation
-│   ├── rfc4616-sasl-plain.txt  # SASL PLAIN mechanism
-│   ├── rfc6120-xmpp-core.txt   # XMPP Core (RFC 6120 §5 STARTTLS, §4.9 stream errors)
-│   ├── rfc6121-xmpp.txt        # XMPP Instant Messaging (roster, presence)
-│   ├── rfc7622-jid-format.txt  # XMPP JID format
-│   ├── xep-0030.xml            # XEP-0030 (alternate copy)
-│   ├── xep-0030-service-discovery.xml  # XEP-0030 disco#info / disco#items
-│   └── xep-0199-xmpp-ping.xml  # XEP-0199 XMPP Ping
+├── docs/specs/               # RFC/XEP specs referenced by implementation
+│   ├── rfc4616-sasl-plain.txt         # SASL PLAIN mechanism
+│   ├── rfc5766-stun-turn.txt          # STUN/TURN relay support
+│   ├── rfc5802-scram.txt              # SCRAM authentication mechanism
+│   ├── rfc6120-xmpp-core.txt          # XMPP Core (stream negotiation, TLS, SASL)
+│   ├── rfc6121-xmpp-im.txt             # XMPP IM (roster, presence, stanzas)
+│   ├── rfc7622-jid-format.txt         # XMPP JID format (RFC 7622)
+│   ├── rfc7677-scram-sha256.txt       # SCRAM-SHA-256 mechanism
+│   ├── rfc8155-websocket.txt          # WebSocket binding for XMPP
+│   ├── rfc8553-tcp.txt                # TCP binding for XMPP
+│   ├── rfc8656-turn.txt               # TURN relay protocol
+│   ├── rfc8829-websocket.txt          # WebSocket transport for XMPP
+│   ├── rfc9266-cbOR.txt               # Channel Binding OTP
+│   ├── xep-0027-gpg-sign.xml           # GPG signed XMPP stanzas
+│   ├── xep-0030-caps.xml               # Common Alerting Protocol
+│   ├── xep-0045-muc.xml                # Multi-User Chat
+│   ├── xep-0048-bookmarks.xml         # Bookmarks
+│   ├── xep-0049-pprivate.xml           # Private XML Storage
+│   ├── xep-0054-vcard-temp.xml         # vCard Temporary Protocol
+│   ├── xep-0059-roster-ver.xml        # Roster Versioning
+│   ├── xep-0060-pubsub.xml            # Publish-Subscribe
+│   ├── xep-0065-s5b.xml               # SOCKS5 Bytestreams
+│   ├── xep-0084-user-avatar.xml       # User Avatar
+│   ├── xep-0115-entity-cap.xml        # Entity Capabilities
+│   ├── xep-0153-user-nick.xml         # User Nickname
+│   ├── xep-0160-presence-xml.xml      # Presence (XML content)
+│   ├── xep-0163-pep.xml               # Personal Eventing Protocol
+│   ├── xep-0166-disco-info.xml        # Service Discovery Info
+│   ├── xep-0167-multi-chat.xml        # Multi-Party Messaging
+│   ├── xep-0176-ignore.xml            # Ignoring Messages
+│   ├── xep-0184-receipts.xml          # Message Delivery Receipts
+│   ├── xep-0191-ping.xml              # Ping over XMPP
+│   ├── xep-0198-stream-mgmt.xml        # Stream Management
+│   ├── xep-0199-ping.xml              # XMPP Ping
+│   ├── xep-0203-time.xml              # Time
+│   ├── xep-0215-enc-keys.xml          # Encryption Keys
+│   ├── xep-0234-omemo.xml             # OMEMO Encryption
+│   ├── xep-0237-ft.xml                # File Transfer
+│   ├── xep-0245-leave-muc.xml         # Leaving a MUC Room
+│   ├── xep-0249-mini-presence.xml    # Minimal Presence
+│   ├── xep-0280-carbons.xml           # Message Carbons
+│   ├── xep-0297-hints.xml             # Stanza Hints
+│   ├── xep-0313-mam.xml               # Message Archive Management
+│   ├── xep-0333-spoiler.xml           # Spoiler Messages
+│   ├── xep-0352-csi.xml               # Client State Indication
+│   ├── xep-0363-header.xml            # HTTP TLS POI
+│   ├── xep-0373-ox-encrypt.xml        # OpenPGP Encryption
+│   ├── xep-0374-ox-sign.xml           # OpenPGP Signing
+│   └── xep-0384-ox-end-to-end.xml     # OpenPGP for XMPP
 └── build/                    # Build output directories (debug/asan)
 ```
+
+## Spec Files Legend
+
+| Prefix | Type | Description |
+|--------|------|-------------|
+| rfcXXXX-\*.txt | RFC | IETF standards track documents |
+| xep-XXXX-\*.xml | XEP | XMPP Extension Proposals |
+
+### RFC Categories
+- **Core XMPP**: rfc6120, rfc6121, rfc7622
+- **Authentication**: rfc4616, rfc5802, rfc7677
+- **Transport**: rfc8829, rfc8155, rfc8553
+- **Relay**: rfc5766, rfc8656
+- **Security**: rfc9266
+
+### XEP Categories
+- **Core**: xep-0030 (caps), xep-0166 (disco-info)
+- **Messaging**: xep-0184 (receipts), xep-0280 (carbons), xep-0297 (hints)
+- **Presence**: xep-0160 (presence-xml), xep-0249 (mini-presence)
+- **Roster**: xep-0059 (roster versioning)
+- **MUC**: xep-0045, xep-0245
+- **Storage**: xep-0048 (bookmarks), xep-0049 (private)
+- **Encryption**: xep-0373, xep-0374, xep-0384 (OX/OMEMO)
+- **Advanced**: xep-0060 (pubsub), xep-0163 (pep), xep-0313 (MAM)
