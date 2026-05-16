@@ -99,4 +99,9 @@ void xmpp_session_reset(xmpp_session_t* ctx);
 /* Free libstrophe resources (parser + strophe context). */
 void xmpp_session_cleanup(xmpp_session_t* ctx);
 
+/* Register core IQ handlers (roster get/set).
+ * Called during server initialization before handling connections.
+ */
+int xmpp_iq_register_handlers(void);
+
 #endif /* XMPP_H */

@@ -1,3 +1,11 @@
+/* XEP-0030: Service Discovery
+ * https://xmpp.org/extensions/xep-0030.html
+ *
+ * §3.1  disco#info: return identity + feature list for a JID or server.
+ * §3.2  disco#items: return child items (components, rooms, etc.).
+ * Security Considerations: non-existent local bare JID → service-unavailable
+ *   (prevents user enumeration).
+ */
 #include "xep-0030-service-discovery.h"
 
 #include <stdlib.h>
@@ -5,8 +13,10 @@
 
 #include "storage/db.h"
 #include "storage/db_users.h"
+#include "strophe.h"
 #include "stumpless.h"
 #include "xmpp_iq_buf.h"
+#include "xmpp_iq_dispatch.h"
 
 static const char* server_features[] = {
     "urn:xmpp:ping",
@@ -25,7 +35,7 @@ typedef enum {
   TARGET_UNKNOWN,       /* foreign domain or other unknown entity */
 } disco_target_t;
 
-static void send_error(xmpp_session_t* ctx, const char* iq_id, const char* condition) {
+static void send_info_error(xmpp_session_t* ctx, const char* iq_id, const char* condition) {
   char* buf = (char*)malloc(IQ_BUF_SIZE);
   if (!buf) {
     stump_er("disco#info: out of memory (error response)");
@@ -58,8 +68,40 @@ static void send_error(xmpp_session_t* ctx, const char* iq_id, const char* condi
   free(buf);
 }
 
-/* XEP-0030 §3.1 + Security Considerations:
- * Returns TARGET_SERVER, TARGET_LOCAL_USER, or TARGET_UNKNOWN. */
+static void send_items_error(xmpp_session_t* ctx, const char* iq_id, const char* condition) {
+  char* buf = (char*)malloc(IQ_BUF_SIZE);
+  if (!buf) {
+    stump_er("disco#items: out of memory (error response)");
+    return;
+  }
+  size_t len = 0;
+  int rc;
+  if (iq_id) {
+    rc = iq_append(buf, &len, IQ_BUF_SIZE,
+                   "<iq type='error' id='%s'>"
+                   "<query xmlns='http://jabber.org/protocol/disco#items'/>"
+                   "<error type='cancel'>"
+                   "<%s xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                   "</error></iq>",
+                   iq_id, condition);
+  } else {
+    rc = iq_append(buf, &len, IQ_BUF_SIZE,
+                   "<iq type='error'>"
+                   "<query xmlns='http://jabber.org/protocol/disco#items'/>"
+                   "<error type='cancel'>"
+                   "<%s xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                   "</error></iq>",
+                   condition);
+  }
+  if (rc == 0) {
+    iq_flush(ctx, buf, len);
+  } else {
+    stump_er("disco#items: error stanza too large");
+  }
+  free(buf);
+}
+
+/* XEP-0030 §3.1, Security Considerations: classify the 'to' attribute. */
 static disco_target_t disco_resolve_target(const xmpp_session_t* ctx, const char* to) {
   if (!to || strcmp(to, ctx->domain) == 0) {
     return TARGET_SERVER;
@@ -76,44 +118,44 @@ static disco_target_t disco_resolve_target(const xmpp_session_t* ctx, const char
     if (found == 0) {
       return TARGET_LOCAL_USER;
     }
-    /* XEP-0030 Security Considerations: non-existent bare JID on this server
-     * → service-unavailable (prevents directory harvesting). */
+    /* XEP-0030 Security Considerations: return service-unavailable, not item-not-found,
+     * so the response is indistinguishable from a real user's (prevents enumeration). */
     return TARGET_LOCAL_MISSING;
   }
   return TARGET_UNKNOWN;
 }
 
-void xep0030_handle_disco_info(xmpp_session_t* ctx, const char* iq_id, const char* to,
-                               const char* node) {
+/* XEP-0030 §3.1: handle disco#info get IQ. */
+static iq_handler_result_t xep0030_handle_disco_info_iq(xmpp_session_t* ctx, xmpp_stanza_t* stanza,
+                                                xmpp_stanza_t* child, const char* iq_id) {
+  const char* to = xmpp_stanza_get_attribute(stanza, "to");
+  const char* node = child ? xmpp_stanza_get_attribute(child, "node") : NULL;
+
   disco_target_t target = disco_resolve_target(ctx, to);
 
   if (target == TARGET_LOCAL_MISSING) {
-    /* Non-existent bare JID on this server: service-unavailable per
-     * XEP-0030 Security Considerations (prevents directory harvesting). */
-    send_error(ctx, iq_id, "service-unavailable");
-    return;
+    send_info_error(ctx, iq_id, "service-unavailable");
+    return IQ_ERROR;
   }
 
   if (target == TARGET_UNKNOWN) {
-    send_error(ctx, iq_id, "item-not-found");
-    return;
+    send_info_error(ctx, iq_id, "item-not-found");
+    return IQ_ERROR;
   }
 
-  /* R4: this server has no named nodes — unknown node → item-not-found. */
   if (node && node[0] != '\0') {
-    send_error(ctx, iq_id, "item-not-found");
-    return;
+    send_info_error(ctx, iq_id, "item-not-found");
+    return IQ_ERROR;
   }
 
   char* buf = (char*)malloc(IQ_BUF_SIZE);
   if (!buf) {
     stump_er("disco#info: out of memory");
-    return;
+    return IQ_ERROR;
   }
   size_t len = 0;
   int rc;
 
-  /* RFC 6120 §8.1.1: result from= must echo the request's to= (or server domain). */
   const char* from_jid = (to && to[0]) ? to : ctx->domain;
 
   if (iq_id) {
@@ -129,8 +171,8 @@ void xep0030_handle_disco_info(xmpp_session_t* ctx, const char* iq_id, const cha
   }
   if (rc != 0) goto overflow;
 
-  /* XEP-0030 §3.1: bare JID result uses category='account' type='registered';
-   * server domain uses category='server' type='im'. */
+  /* XEP-0030 §3.1: bare JID → category='account' type='registered';
+   * server domain → category='server' type='im'. */
   if (target == TARGET_LOCAL_USER) {
     if (iq_append(buf, &len, IQ_BUF_SIZE,
                   "<identity category='account' type='registered'/>") != 0) goto overflow;
@@ -148,9 +190,75 @@ void xep0030_handle_disco_info(xmpp_session_t* ctx, const char* iq_id, const cha
 
   iq_flush(ctx, buf, len);
   free(buf);
-  return;
+  return IQ_HANDLED;
 
 overflow:
   stump_er("disco#info: response buffer overflow");
   free(buf);
+  return IQ_ERROR;
 }
+
+/* XEP-0030 §3.2: handle disco#items get IQ. Server has no child items. */
+static iq_handler_result_t xep0030_handle_disco_items_iq(xmpp_session_t* ctx, xmpp_stanza_t* stanza,
+                                                   xmpp_stanza_t* child, const char* iq_id) {
+  const char* to = xmpp_stanza_get_attribute(stanza, "to");
+  const char* node = child ? xmpp_stanza_get_attribute(child, "node") : NULL;
+
+  disco_target_t target = disco_resolve_target(ctx, to);
+
+  if (target == TARGET_LOCAL_MISSING) {
+    send_items_error(ctx, iq_id, "service-unavailable");
+    return IQ_ERROR;
+  }
+
+  if (target == TARGET_UNKNOWN) {
+    send_items_error(ctx, iq_id, "item-not-found");
+    return IQ_ERROR;
+  }
+
+  if (node && node[0] != '\0') {
+    send_items_error(ctx, iq_id, "item-not-found");
+    return IQ_ERROR;
+  }
+
+  char buf[256];
+  size_t len = 0;
+  const char* from_jid = (to && to[0]) ? to : ctx->domain;
+
+  int rc;
+  if (iq_id) {
+    rc = iq_append(buf, &len, sizeof(buf),
+                   "<iq type='result' id='%s' from='%s'>"
+                   "<query xmlns='http://jabber.org/protocol/disco#items'/>"
+                   "</iq>",
+                   iq_id, from_jid);
+  } else {
+    rc = iq_append(buf, &len, sizeof(buf),
+                   "<iq type='result' from='%s'>"
+                   "<query xmlns='http://jabber.org/protocol/disco#items'/>"
+                   "</iq>",
+                   from_jid);
+  }
+
+  if (rc != 0) {
+    stump_er("disco#items: response too large");
+    return IQ_ERROR;
+  }
+
+  iq_flush(ctx, buf, len);
+  return IQ_HANDLED;
+}
+
+/* Handler registration table. */
+static const iq_handler_entry_t disco_handlers[] = {
+    IQ_HANDLER("http://jabber.org/protocol/disco#info",  "get", IQ_PRIORITY_NORMAL,
+               xep0030_handle_disco_info_iq),
+    IQ_HANDLER("http://jabber.org/protocol/disco#items", "get", IQ_PRIORITY_NORMAL,
+               xep0030_handle_disco_items_iq),
+    IQ_HANDLERS_END
+};
+
+int xep0030_init(void) {
+    return iq_handler_register_all(disco_handlers);
+}
+

@@ -1,6 +1,6 @@
 # Step 13 — Service Discovery for items, plus correct features list
 
-**Status: ❌ NOT DONE**
+**Status: ✅ DONE**
 
 ## What
 
@@ -27,5 +27,5 @@ Step 6 adds a minimal disco#info handler for the server JID. This step extends i
 
 ## Done criteria
 
-- [ ] Client's "server features" panel lists the right features.
-- [ ] Clients no longer send disco queries that the server fails to answer.
+- [x] Client's "server features" panel lists the right features.
+- [x] Clients no longer send disco queries that the server fails to answer.

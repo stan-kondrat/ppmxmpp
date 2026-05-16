@@ -18,6 +18,10 @@
 #include "storage/db.h"
 #include "storage/db_users.h"
 #include "tls.h"
+#include "xep-0030-service-discovery.h"
+#include "xep-0199-ping.h"
+#include "xep-0280-carbons.h"
+#include "xmpp_iq_dispatch.h"
 
 #define VERSION "ppmxmpp dev build"
 
@@ -134,9 +138,43 @@ int main(int argc, char* argv[]) {
 
   config_print(config_path, &server_config);
 
+  /* Initialize IQ handler registry. */
+  if (iq_dispatch_init() != 0) {
+    stump_er("failed to initialize IQ dispatcher");
+    log_free();
+    return 1;
+  }
+
+  /* Register core and XEP handlers. */
+  if (xmpp_iq_register_handlers() != 0) {
+    stump_er("failed to register IQ handlers");
+    iq_dispatch_shutdown();
+    log_free();
+    return 1;
+  }
+  if (xep0030_init() != 0) {
+    stump_er("failed to register disco handlers");
+    iq_dispatch_shutdown();
+    log_free();
+    return 1;
+  }
+  if (xep0199_init() != 0) {
+    stump_er("failed to register ping handlers");
+    iq_dispatch_shutdown();
+    log_free();
+    return 1;
+  }
+  if (xep0280_init() != 0) {
+    stump_er("failed to register carbons handlers");
+    iq_dispatch_shutdown();
+    log_free();
+    return 1;
+  }
+
   sqlite3* db = NULL;
   if (storage_db_open(&db) != 0) {
     stump_er("failed to open database");
+    iq_dispatch_shutdown();
     log_free();
     return 1;
   }
@@ -149,6 +187,7 @@ int main(int argc, char* argv[]) {
     stump_er("server initialization failed");
     uv_loop_close(&loop);
     storage_db_close();
+    iq_dispatch_shutdown();
     log_free();
     return 1;
   }
@@ -157,6 +196,7 @@ int main(int argc, char* argv[]) {
   uv_loop_close(&loop);
 
   storage_db_close();
+  iq_dispatch_shutdown();
   log_free();
   return srv != 0 ? 1 : 0;
 }

@@ -1,9 +1,21 @@
+/* XEP-0280: Message Carbons
+ * https://xmpp.org/extensions/xep-0280.html
+ *
+ * §5    Client opts in/out per resource via <enable/>/<disable/> IQ set.
+ * §7    Server copies outbound chat messages to all other carbons-enabled
+ *       resources of the sender as <sent/> wrappers.
+ * §8    Server copies inbound chat messages to all other carbons-enabled
+ *       resources of the recipient as <received/> wrappers.
+ */
 #include "xep-0280-carbons.h"
 
 #include <stdint.h>
 #include <string.h>
 
+#include "strophe.h"
 #include "stumpless.h"
+#include "xmpp_iq_buf.h"
+#include "xmpp_iq_dispatch.h"
 #include "xmpp_session.h"
 
 /* ------------------------------------------------------------------ */
@@ -57,4 +69,46 @@ void xmpp_session_table_for_each_carbon_resource(const char* bare_jid,
     if (!g_sessions[i].carbons_enabled) continue;
     cb(g_sessions[i].bound_jid, g_sessions[i].write_fn, g_sessions[i].write_ud, ud);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  IQ Handler for carbons enable/disable                             */
+/* ------------------------------------------------------------------ */
+
+/* XEP-0280 §5: handle <iq type='set'><enable|disable xmlns='urn:xmpp:carbons:2'/></iq>. */
+static iq_handler_result_t xep0280_handle_carbons_iq(xmpp_session_t* ctx, xmpp_stanza_t* stanza,
+                                              xmpp_stanza_t* child, const char* iq_id) {
+  (void)child;
+
+  xmpp_stanza_t* child_el = xmpp_stanza_get_children(stanza);
+  while (child_el) {
+    const char* cname = xmpp_stanza_get_name(child_el);
+    if (cname && (strcmp(cname, "enable") == 0 || strcmp(cname, "disable") == 0)) {
+      int enable = (strcmp(cname, "enable") == 0);
+      ctx->carbons_enabled = enable;
+      xmpp_session_table_update_carbons(ctx->bound_jid, enable);
+      stump_d("carbons iq: %s for %s", enable ? "enable" : "disable", ctx->bound_jid);
+      break;
+    }
+    child_el = xmpp_stanza_get_next(child_el);
+  }
+
+  if (iq_id) {
+    char buf[128];
+    size_t len = 0;
+    iq_append(buf, &len, sizeof(buf), "<iq type='result' id='%s'/>", iq_id);
+    iq_flush(ctx, buf, len);
+  }
+  return IQ_HANDLED;
+}
+
+/* Handler registration table. */
+static const iq_handler_entry_t carbons_handlers[] = {
+    IQ_HANDLER("urn:xmpp:carbons:2", "set", IQ_PRIORITY_NORMAL, xep0280_handle_carbons_iq),
+    IQ_HANDLERS_END
+};
+
+/* Module initialization — registers handlers with the dispatcher. */
+int xep0280_init(void) {
+    return iq_handler_register_all(carbons_handlers);
 }

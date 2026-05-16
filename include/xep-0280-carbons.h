@@ -15,6 +15,9 @@
 /*  carbons-enabled resources receive a <received/> wrapped copy.      */
 /* ------------------------------------------------------------------ */
 
+/* Register XEP-0280 handlers with the IQ dispatcher. */
+int xep0280_init(void);
+
 /* Update the carbons_enabled flag for a registered session.
  * No-op if the session is not in the table. */
 void xmpp_session_table_update_carbons(const char* bound_jid, int enabled);

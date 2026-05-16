@@ -17,6 +17,11 @@
 #include "storage/db.h"
 #include "storage/db_users.h"
 #include "test_xmpp_helpers.h"
+#include "xmpp.h"
+#include "xep-0030-service-discovery.h"
+#include "xep-0199-ping.h"
+#include "xep-0280-carbons.h"
+#include "xmpp_iq_dispatch.h"
 
 char g_write_buf[65536];
 size_t g_write_len = 0;
@@ -32,6 +37,17 @@ int mock_write(void* ud, const char* data, size_t len) {
 }
 
 int setup_test_db(const char** db_path_out) {
+  /* Initialize and register handlers once per test process. */
+  static int handlers_initialized = 0;
+  if (!handlers_initialized) {
+    iq_dispatch_init();
+    xmpp_iq_register_handlers();
+    xep0030_init();
+    xep0199_init();
+    xep0280_init();
+    handlers_initialized = 1;
+  }
+
   char path[512];
   snprintf(path, sizeof(path), "/tmp/test_xmpp_%d_%d.db", getpid(), (int)time(NULL));
   unlink(path);
