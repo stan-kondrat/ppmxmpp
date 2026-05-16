@@ -8,7 +8,16 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    name: build-and-test (${{ matrix.arch }})
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,7 +41,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/debug/third_party
-          key: ${{ runner.os }}-thirdparty-${{ steps.submodules.outputs.hash }}-${{ steps.makefile.outputs.hash }}
+          key: ${{ runner.os }}-${{ runner.arch }}-thirdparty-${{ steps.submodules.outputs.hash }}-${{ steps.makefile.outputs.hash }}
 
       - name: Build third-party libraries
         run: make third-party
