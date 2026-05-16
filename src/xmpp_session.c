@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "stumpless.h"
+#include "storage/db_offline.h"
 
 /* ------------------------------------------------------------------ */
 /*  Internal types                                                     */
@@ -74,6 +75,14 @@ void xmpp_session_table_register(xmpp_session_t* ctx, xmpp_write_fn write_fn, vo
   e->priority = 0;
   e->last_active = now;
   stump_d("session: registered %s (%d sessions)", e->bound_jid, g_session_count);
+
+  /* Drain offline messages for this user (XEP-0160). */
+  char bare_jid[3073];
+  xmpp_session_bare_jid(ctx->bound_jid, bare_jid, sizeof(bare_jid));
+  stump_i("session: about to drain offline messages for %s", bare_jid);
+  if (offline_drain(bare_jid, write_fn, write_ud) != 0) {
+    stump_er("session: failed to drain offline messages for %s", bare_jid);
+  }
 }
 
 void xmpp_session_table_unregister(const char* bound_jid) {

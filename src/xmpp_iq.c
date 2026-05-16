@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "storage/roster.h"
+#include "storage/db_roster.h"
 #include "strophe.h"
 #include "stumpless.h"
 #include "xep-0030-service-discovery.h"
@@ -409,12 +409,47 @@ void xmpp_iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     }
   }
 
-  /* XEP-0030: Service Discovery */
+  /* XEP-0030: Service Discovery — info */
   if (ns && strcmp(ns, "http://jabber.org/protocol/disco#info") == 0 &&
       strcmp(iq_type, "get") == 0) {
     const char* to = xmpp_stanza_get_attribute(stanza, "to");
     const char* node = xmpp_stanza_get_attribute(child, "node");
     xep0030_handle_disco_info(ctx, iq_id, to, node);
+    return;
+  }
+
+  /* XEP-0030: Service Discovery — items (empty: no components or MUC rooms) */
+  if (ns && strcmp(ns, "http://jabber.org/protocol/disco#items") == 0 &&
+      strcmp(iq_type, "get") == 0) {
+    char buf[256];
+    size_t len = 0;
+    const char* to_attr = xmpp_stanza_get_attribute(stanza, "to");
+    const char* from_jid = (to_attr && to_attr[0]) ? to_attr : ctx->domain;
+    if (iq_id) {
+      iq_append(buf, &len, sizeof(buf),
+                "<iq type='result' id='%s' from='%s'>"
+                "<query xmlns='http://jabber.org/protocol/disco#items'/>"
+                "</iq>",
+                iq_id, from_jid);
+    } else {
+      iq_append(buf, &len, sizeof(buf),
+                "<iq type='result' from='%s'>"
+                "<query xmlns='http://jabber.org/protocol/disco#items'/>"
+                "</iq>",
+                from_jid);
+    }
+    iq_flush(ctx, buf, len);
+    return;
+  }
+
+  /* XEP-0280: Message Carbons — acknowledge enable/disable without delivering */
+  if (ns && strcmp(ns, "urn:xmpp:carbons:2") == 0 && strcmp(iq_type, "set") == 0) {
+    if (iq_id) {
+      char buf[128];
+      size_t len = 0;
+      iq_append(buf, &len, sizeof(buf), "<iq type='result' id='%s'/>", iq_id);
+      iq_flush(ctx, buf, len);
+    }
     return;
   }
 

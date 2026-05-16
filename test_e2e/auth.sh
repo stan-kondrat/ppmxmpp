@@ -107,8 +107,8 @@ wait_for_port 127.0.0.1 "$TLS_PORT" "$TIMEOUT" || {
 }
 pass "Server is listening on TLS 127.0.0.1:$TLS_PORT"
 
-# Give server a moment to flush its startup logs
-sleep 1
+# Wait for server to log its startup completion
+wait_for_pattern "$SERVER_LOG" "listening on" 5
 
 # ------------------------------------------------------------------- verify cert was auto-generated
 

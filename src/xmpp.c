@@ -4,6 +4,9 @@
 #include "xmpp_presence.h"
 #include "xmpp_sasl.h"
 
+#include "storage/db_offline.h"
+#include "xmpp_session.h"
+
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -572,6 +575,17 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
 
   stump_d("stream stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id, _state_name(ctx->state),
           xmpp_stanza_get_name(stanza));
+  /* Debug: log stanza attributes */
+  {
+    const char* _sto = xmpp_stanza_get_attribute(stanza, "to");
+    const char* _sfrom = xmpp_stanza_get_attribute(stanza, "from");
+    const char* _stype = xmpp_stanza_get_attribute(stanza, "type");
+    const char* _sid = xmpp_stanza_get_attribute(stanza, "id");
+    const char* _sns = xmpp_stanza_get_ns(stanza);
+    stump_d("stream stanza detail: ns='%s' to='%s' from='%s' type='%s' id='%s'",
+            _sns ? _sns : "", _sto ? _sto : "", _sfrom ? _sfrom : "",
+            _stype ? _stype : "", _sid ? _sid : "");
+  }
 
   switch (ctx->state) {
   case XMPP_STATE_FEATURES_RECEIVED: {
@@ -906,6 +920,14 @@ int xmpp_feed(xmpp_session_t* ctx, const char* data, size_t len, xmpp_write_fn w
   _extract_namespaces(data, len, ctx->client_ns, sizeof(ctx->client_ns), ctx->stream_ns,
                       sizeof(ctx->stream_ns));
 
+  /* Debug: log raw data being fed to parser (first 256 chars) */
+  {
+    char _feedbuf[257];
+    size_t _feedlen = feed_len < 256 ? feed_len : 256;
+    memcpy(_feedbuf, feed_data, _feedlen);
+    _feedbuf[_feedlen] = '\0';
+    stump_d("xmpp_feed: feeding %zu bytes to parser: '%s'", feed_len, _feedbuf);
+  }
   /* libstrophe's parser_feed takes char* but doesn't modify the data. */
   int rc = parser_feed((parser_t*)ctx->parser, (char*)feed_data, (int)feed_len);
   if (rc == 0) {

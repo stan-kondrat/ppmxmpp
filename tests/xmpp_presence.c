@@ -9,7 +9,7 @@
 
 #include "config.h"
 #include "storage/db.h"
-#include "storage/roster.h"
+#include "storage/db_roster.h"
 #include "test_xmpp_helpers.h"
 #include "xmpp.h"
 #include "xmpp_presence.h"
@@ -427,7 +427,7 @@ static void test_disconnect_noop_when_never_sent_presence(void** state) {
 /*  Subscription helpers                                               */
 /* ------------------------------------------------------------------ */
 
-#include "storage/users.h"
+#include "storage/db_users.h"
 
 /* Drive a second user (contactuser/testpass) to XMPP_STATE_ONLINE.
  * setup_test_db() must have been called first. */

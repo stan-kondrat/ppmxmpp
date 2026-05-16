@@ -13,7 +13,7 @@
 
 #include "config.h"
 #include "storage/db.h"
-#include "storage/users.h"
+#include "storage/db_users.h"
 
 /* ---------------------------------------------------------------------------
  * Helper: generate a unique temp path for the database.

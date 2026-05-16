@@ -160,20 +160,13 @@ PROF_PID=$!
 # Poll log for bind result IQ containing the full JID, or failure (max 20s).
 # Profanity logs the bind result as:
 #   xmpp: DBG: RECV: <iq ... type="result"><bind ...><jid>user@domain/resource</jid>...
-WAIT=0
 PROF_RESULT=""
-until [[ $WAIT -ge 40 ]]; do
-    if grep -qE 'RECV:.*<jid>[^<]+@[^<]+/[^<]+</jid>' "$CLIENT_LOG" 2>/dev/null; then
-        PROF_RESULT="pass"
-        break
-    fi
-    if grep -qiE "login failed|connection failed" "$CLIENT_LOG" 2>/dev/null; then
-        PROF_RESULT="fail"
-        break
-    fi
-    sleep 0.5
-    WAIT=$((WAIT+1))
-done
+wait_for_pattern "$CLIENT_LOG" 'RECV:.*<jid>[^<]+@[^<]+/[^<]+</jid>|login failed|connection failed' 20 || true
+if grep -qE 'RECV:.*<jid>[^<]+@[^<]+/[^<]+</jid>' "$CLIENT_LOG" 2>/dev/null; then
+    PROF_RESULT="pass"
+elif grep -qiE "login failed|connection failed" "$CLIENT_LOG" 2>/dev/null; then
+    PROF_RESULT="fail"
+fi
 kill "$PROF_PID" 2>/dev/null || true
 wait "$PROF_PID" 2>/dev/null || true
 

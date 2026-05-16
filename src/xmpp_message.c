@@ -6,6 +6,7 @@
 
 #include "strophe.h"
 #include "stumpless.h"
+#include "xep-0160-offline-messages.h"
 #include "xmpp_iq_buf.h"
 #include "xmpp_session.h"
 
@@ -175,8 +176,15 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
         xmpp_session_table_write(best_jid, fwd, fwd_len);
         xmpp_session_table_touch(ctx->bound_jid);
       }
+    } else {
+      /* No online resource: store for offline delivery (XEP-0160). */
+      stump_d("message: %s is offline, storing for later delivery", to_bare);
+      if (build_message(fwd, &fwd_len, sizeof(fwd), ctx->bound_jid, to_bare, msg_type, msg_id,
+                        body_text) == 0) {
+        xep0160_store(ctx, to_bare, msg_id, fwd, fwd_len);
+        xmpp_session_table_touch(ctx->bound_jid);
+      }
     }
-    /* else: no online resource — silently drop (offline store is Step 11). */
   }
 
   free(body_text);

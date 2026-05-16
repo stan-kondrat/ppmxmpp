@@ -4,7 +4,7 @@
 #include <sqlite3.h>
 #include <stddef.h>
 
-#define STORAGE_MAX_VERSION 2
+#define STORAGE_MAX_VERSION 3
 
 /* Prepared statement handle for the cache. */
 typedef struct {
@@ -43,6 +43,10 @@ long long storage_db_column_int64(storage_stmt_t* stmt, int col);
 /* Return the text value of column 0 as a null-terminated string.
  * Caller must not free the returned pointer. */
 const char* storage_db_column_text(storage_stmt_t* stmt);
+
+/* Return the text value of the given column as a null-terminated string.
+ * Caller must not free the returned pointer. */
+const char* storage_db_column_text_col(storage_stmt_t* stmt, int col);
 
 /* Return a copy of the text value of the given column.
  * Caller must free the returned pointer. */

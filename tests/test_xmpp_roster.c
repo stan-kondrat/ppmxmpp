@@ -11,7 +11,7 @@
 
 #include "config.h"
 #include "storage/db.h"
-#include "storage/roster.h"
+#include "storage/db_roster.h"
 #include "test_xmpp_helpers.h"
 #include "xmpp.h"
 

@@ -4,13 +4,14 @@
 #include <string.h>
 
 #include "storage/db.h"
-#include "storage/users.h"
+#include "storage/db_users.h"
 #include "stumpless.h"
 #include "xmpp_iq_buf.h"
 
 static const char* server_features[] = {
     "urn:xmpp:ping",
     "http://jabber.org/protocol/disco#info",
+    "http://jabber.org/protocol/disco#items",
     "jabber:iq:roster",
     NULL,
 };
@@ -110,15 +111,19 @@ void xep0030_handle_disco_info(xmpp_session_t* ctx, const char* iq_id, const cha
   size_t len = 0;
   int rc;
 
+  /* RFC 6120 §8.1.1: result from= must echo the request's to= (or server domain). */
+  const char* from_jid = (to && to[0]) ? to : ctx->domain;
+
   if (iq_id) {
     rc = iq_append(buf, &len, IQ_BUF_SIZE,
-                   "<iq type='result' id='%s'>"
+                   "<iq type='result' id='%s' from='%s'>"
                    "<query xmlns='http://jabber.org/protocol/disco#info'>",
-                   iq_id);
+                   iq_id, from_jid);
   } else {
     rc = iq_append(buf, &len, IQ_BUF_SIZE,
-                   "<iq type='result'>"
-                   "<query xmlns='http://jabber.org/protocol/disco#info'>");
+                   "<iq type='result' from='%s'>"
+                   "<query xmlns='http://jabber.org/protocol/disco#info'>",
+                   from_jid);
   }
   if (rc != 0) goto overflow;
 

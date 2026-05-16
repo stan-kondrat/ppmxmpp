@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "storage/db.h"
-#include "storage/roster.h"
+#include "storage/db_roster.h"
 #include "strophe.h"
 #include "stumpless.h"
 #include "xmpp_iq_buf.h"

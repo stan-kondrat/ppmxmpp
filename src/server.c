@@ -80,8 +80,45 @@ static void on_conn_close(uv_handle_t* handle) {
   free(conn);
 }
 
+/* Drain any remaining buffered TLS data before closing.
+ * This ensures messages that arrive just before the connection closes
+ * are still processed (e.g., a message sent before a /quit). */
+static void drain_pending_tls(conn_t* conn) {
+  if (!conn->is_tls || !conn->tls_hs_done) return;
+
+  while (1) {
+    char plain[READ_BUF_SIZE];
+    int r = mbedtls_ssl_read(&conn->ssl, (unsigned char*)plain, sizeof(plain));
+    if (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) {
+      break;
+    }
+    if (r == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+      stump_d("conn %" PRIu64 ": drain_pending_tls: peer close-notify", conn->id);
+      break;
+    }
+    if (r <= 0) {
+      break;
+    }
+    stump_d("conn %" PRIu64 ": drain_pending_tls: decrypted %d bytes", conn->id, r);
+    /* Debug: log the raw decrypted XML (first 512 chars) */
+    {
+      char _dbgbuf2[513];
+      size_t _dbglen2 = (size_t)r < 512 ? (size_t)r : 512;
+      memcpy(_dbgbuf2, plain, _dbglen2);
+      _dbgbuf2[_dbglen2] = '\0';
+      stump_d("conn %" PRIu64 ": drain_raw: '%s'", conn->id, _dbgbuf2);
+    }
+    /* Feed remaining data to parser. Ignore return — we are draining. */
+    (void)xmpp_feed(&conn->xmpp, plain, (size_t)r, conn_write, conn);
+  }
+}
+
 static void close_conn(conn_t* conn) {
   if (!uv_is_closing((uv_handle_t*)&conn->client)) {
+    /* Drain any pending TLS data before closing so that stanzas received
+     * just before the close (e.g., a message sent right before /quit) are
+     * still processed. */
+    drain_pending_tls(conn);
     uv_close((uv_handle_t*)&conn->client, on_conn_close);
   }
 }
@@ -209,6 +246,11 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     if (nread != UV_EOF) {
       stump_er("conn %" PRIu64 ": read error: %s", conn->id, uv_strerror((int)nread));
     }
+    /* UV_EOF: drain any remaining bytes that arrived just before the FIN,
+     * then close.  Without draining, bytes that were in the kernel buffer
+     * when the FIN was received can be lost (e.g. a message sent right
+     * before /quit). */
+    drain_pending_tls(conn);
     close_conn(conn);
     return;
   }
@@ -253,25 +295,54 @@ static void read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
       conn->xmpp.needs_parser_reset = 1;
     }
 
-    /* Decrypt available records and feed plaintext to XMPP. */
-    char plain[READ_BUF_SIZE];
-    int r = mbedtls_ssl_read(&conn->ssl, (unsigned char*)plain, sizeof(plain));
-    if (r == MBEDTLS_ERR_SSL_WANT_READ) {
-      return;
-    }
-    if (r <= 0) {
-      if (r != 0) {
-        stump_d("conn %" PRIu64 ": ssl_read: -0x%04x", conn->id, -r);
+    /* Decrypt and feed all TLS records already buffered in the SSL context.
+     * mbedtls_ssl_check_pending() returns 1 when the input buffer holds a
+     * complete record that has not been returned by ssl_read yet, so we drain
+     * those without blocking on the network.  The first read always runs; after
+     * that we only loop while there is more buffered data. */
+    do {
+      char plain[READ_BUF_SIZE];
+      int r = mbedtls_ssl_read(&conn->ssl, (unsigned char*)plain, sizeof(plain));
+      if (r == MBEDTLS_ERR_SSL_WANT_READ) {
+        break;
       }
-      close_conn(conn);
-      return;
-    }
-
-    int rc = xmpp_feed(&conn->xmpp, plain, (size_t)r, conn_write, conn);
-    if (rc != 0) {
-      stump_d("conn %" PRIu64 ": XMPP requested close", conn->id);
-      close_conn(conn);
-    }
+      if (r == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+        stump_d("conn %" PRIu64 ": TLS close-notify received", conn->id);
+        /* Drain remaining TLS data before closing — there may still be bytes
+         * in the mbedtls input buffer that were received just before the
+         * close-notify (e.g., a message sent immediately before /quit). */
+        drain_pending_tls(conn);
+        close_conn(conn);
+        return;
+      }
+      if (r <= 0) {
+        if (r != 0) {
+          stump_d("conn %" PRIu64 ": ssl_read: -0x%04x", conn->id, -r);
+        }
+        drain_pending_tls(conn);
+        close_conn(conn);
+        return;
+      }
+      stump_d("conn %" PRIu64 ": ssl_read: decrypted %d bytes", conn->id, r);
+      /* Debug: log the raw decrypted XML (first 512 chars) */
+      {
+        char _dbgbuf[513];
+        size_t _dbglen = (size_t)r < 512 ? (size_t)r : 512;
+        memcpy(_dbgbuf, plain, _dbglen);
+        _dbgbuf[_dbglen] = '\0';
+        stump_d("conn %" PRIu64 ": raw_decrypted: '%s'", conn->id, _dbgbuf);
+      }
+      int rc = xmpp_feed(&conn->xmpp, plain, (size_t)r, conn_write, conn);
+      if (rc != 0) {
+        stump_d("conn %" PRIu64 ": XMPP requested close", conn->id);
+        close_conn(conn);
+        return;
+      }
+    } while (mbedtls_ssl_check_pending(&conn->ssl) ||
+             (conn->tls_in_len > conn->tls_in_pos));
+    stump_d("conn %" PRIu64 ": TLS read loop done, tls_in_buf: pos=%zu len=%zu remaining=%zu",
+            conn->id, conn->tls_in_pos, conn->tls_in_len,
+            conn->tls_in_len - conn->tls_in_pos);
     return;
   }
 

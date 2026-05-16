@@ -15,7 +15,7 @@
 
 #include "config.h"
 #include "storage/db.h"
-#include "storage/users.h"
+#include "storage/db_users.h"
 #include "test_xmpp_helpers.h"
 
 char g_write_buf[65536];

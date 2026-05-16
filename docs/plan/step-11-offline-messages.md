@@ -1,6 +1,6 @@
 # Step 11 — Offline messages
 
-**Status: ❌ NOT DONE**
+**Status: ✅ DONE**
 
 ## What
 
@@ -30,5 +30,5 @@ No offline message storage. No `offline_messages` table. The SQLite schema only 
 
 ## Done criteria
 
-- [ ] A sends to B while B is offline; B logs in and receives the message stamped with the original time.
-- [ ] Capped storage rejects with `<service-unavailable/>` after the cap is reached.
+- [x] A sends to B while B is offline; B logs in and receives the message stamped with the original time.
+- [x] Capped storage rejects with `<service-unavailable/>` after the cap is reached.

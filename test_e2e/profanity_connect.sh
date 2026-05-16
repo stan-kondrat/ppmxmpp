@@ -164,20 +164,13 @@ script -q -c \
 PROF_PID=$!
 
 # Poll log for login success or failure (max 20s).
-WAIT=0
 PROF_RESULT=""
-until [[ $WAIT -ge 40 ]]; do
-    if grep -qiE "logged in|session established|connected to" "$CLIENT_LOG" 2>/dev/null; then
-        PROF_RESULT="pass"
-        break
-    fi
-    if grep -qiE "login failed|connection failed" "$CLIENT_LOG" 2>/dev/null; then
-        PROF_RESULT="fail"
-        break
-    fi
-    sleep 0.5
-    WAIT=$((WAIT+1))
-done
+wait_for_pattern "$CLIENT_LOG" 'logged in|session established|connected to|login failed|connection failed' 20 || true
+if grep -qiE "logged in|session established|connected to" "$CLIENT_LOG" 2>/dev/null; then
+    PROF_RESULT="pass"
+elif grep -qiE "login failed|connection failed" "$CLIENT_LOG" 2>/dev/null; then
+    PROF_RESULT="fail"
+fi
 kill "$PROF_PID" 2>/dev/null || true
 wait "$PROF_PID" 2>/dev/null || true
 

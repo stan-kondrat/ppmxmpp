@@ -8,7 +8,8 @@
 #include <string.h>
 
 #include "storage/db.h"
-#include "storage/users.h"
+#include "storage/db_offline.h"
+#include "storage/db_users.h"
 #include "test_xmpp_helpers.h"
 #include "xmpp.h"
 #include "xmpp_session.h"
@@ -274,8 +275,8 @@ static void test_message_to_self_bare_jid(void** state) {
   teardown_test_db();
 }
 
-/* Message to a bare JID with no online session → silently dropped (no crash). */
-static void test_message_to_offline_user_silently_dropped(void** state) {
+/* Message to a bare JID with no online session → stored offline (XEP-0160). */
+static void test_message_to_offline_user_stored(void** state) {
   (void)state;
   const char* db_path = NULL;
   assert_int_equal(setup_test_db(&db_path), 0);
@@ -290,8 +291,12 @@ static void test_message_to_offline_user_silently_dropped(void** state) {
                     "<body>gone</body></message>";
   assert_int_equal(xmpp_feed(&a_ctx, msg, strlen(msg), mock_write, NULL), 0);
 
+
   /* No error stanza should be returned; no write to sender. */
   assert_int_equal(g_write_len, 0);
+
+  /* Message should be stored in offline_messages table. */
+  assert_int_equal(offline_count("nobody@localhost"), 1);
 
   xmpp_session_cleanup(&a_ctx);
   teardown_test_db();
@@ -367,7 +372,7 @@ int main(void) {
                                       message_test_teardown),
       cmocka_unit_test_setup_teardown(test_message_to_self_bare_jid, message_test_setup,
                                       message_test_teardown),
-      cmocka_unit_test_setup_teardown(test_message_to_offline_user_silently_dropped,
+      cmocka_unit_test_setup_teardown(test_message_to_offline_user_stored,
                                       message_test_setup, message_test_teardown),
       cmocka_unit_test_setup_teardown(test_message_missing_to_returns_error, message_test_setup,
                                       message_test_teardown),

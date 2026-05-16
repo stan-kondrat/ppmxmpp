@@ -16,7 +16,7 @@
 #include "log.h"
 #include "server.h"
 #include "storage/db.h"
-#include "storage/users.h"
+#include "storage/db_users.h"
 #include "tls.h"
 
 #define VERSION "ppmxmpp dev build"

@@ -1,4 +1,4 @@
-#include "storage/roster.h"
+#include "storage/db_roster.h"
 #include "storage/db.h"
 
 #include <stdlib.h>

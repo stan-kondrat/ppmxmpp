@@ -14,7 +14,11 @@
 │   ├── config.h              # Config module header
 │   ├── log.h                 # Logging module header
 │   ├── server.h              # Server module header
-│   ├── storage/              # Database and user storage headers
+│   ├── storage/              # Database and storage headers
+│   │   ├── db.h              # SQLite DB abstraction header
+│   │   ├── db_offline.h      # Offline message storage header (XEP-0160, XEP-0203)
+│   │   ├── db_roster.h      # Roster storage header
+│   │   └── db_users.h       # User storage header
 │   ├── tls.h                 # TLS module header
 │   ├── xmpp.h                # XMPP protocol module header
 │   ├── xmpp_iq.h             # IQ dispatch module header
@@ -24,6 +28,7 @@
 │   ├── xmpp_sasl.h           # SASL authentication module header (sasl_rc_t + handle_sasl_plain)
 │   ├── xmpp_session.h        # XMPP session state header
 │   ├── xep-0030-service-discovery.h  # XEP-0030 disco#info handler header
+│   ├── xep-0160-offline-messages.h  # XEP-0160 offline message storage handler header
 │   └── xep-0199-ping.h       # XEP-0199 ping handler header
 ├── scripts/                  # Utility scripts
 ├── src/
@@ -31,7 +36,11 @@
 │   ├── config.c              # Config parsing implementation
 │   ├── log.c                 # Logging implementation
 │   ├── server.c              # Server event loop implementation
-│   ├── storage/              # Database and user storage implementations
+│   ├── storage/              # Database and storage implementations
+│   │   ├── db.c              # SQLite DB abstraction (migrations, prepared statements)
+│   │   ├── db_offline.c      # Offline message storage (XEP-0160, XEP-0203)
+│   │   ├── db_roster.c       # Roster storage
+│   │   └── db_users.c        # User storage
 │   ├── tls.c                 # TLS certificate/key management
 │   ├── xmpp.c                # XMPP protocol handling (stream negotiation, bind)
 │   ├── xmpp_iq.c             # IQ stanza dispatch (roster, XEP-0030, XEP-0199, errors)
@@ -40,10 +49,19 @@
 │   ├── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
 │   ├── xmpp_session.c        # XMPP session state management
 │   ├── xep-0030-service-discovery.c  # XEP-0030: disco#info handler
+│   ├── xep-0160-offline-messages.c  # XEP-0160: offline message store + cap error
 │   └── xep-0199-ping.c       # XEP-0199: ping handler
 ├── test_e2e/                 # End-to-end integration tests (shell scripts)
 │   ├── _common.sh            # Shared test helpers (sourced by every test)
+│   ├── _helpers_profanity.sh # Helpers for profanity-based E2E tests
+│   ├── _helpers_xmpp-message.sh # Helpers for xmpp-message-based E2E tests
+│   ├── _helpers_xmppc.sh     # Helpers for xmppc-based E2E tests
 │   ├── auth.sh               # E2E: server starts with TLS, profanity connects
+│   ├── message_routing_profanity.sh # E2E: message routing with profanity
+│   ├── message_routing_xmppc.sh # E2E: message routing (bare/full JID, 3-user bidirectional) with xmppc
+│   ├── offline_messages_profanity.sh # E2E: offline message delivery with profanity
+│   ├── offline_messages_xmpp-message.sh # E2E: offline message delivery with xmpp-message
+│   ├── offline_messages_xmppc.sh # E2E: offline message delivery with xmppc
 │   ├── profanity_bind.sh     # E2E: profanity binds a resource; verifies full JID in result
 │   ├── profanity_connect.sh  # E2E: profanity authenticates and reaches ONLINE state
 │   ├── sasl_auth_failure_cap.sh # E2E: three bad passwords close stream with <policy-violation/>
@@ -54,16 +72,17 @@
 │   ├── test_db.c             # Database module unit tests
 │   ├── test_server.c         # Server module unit tests
 │   ├── test_users.c          # Users module unit tests
+│   ├── test_offline.c        # Offline message storage unit tests (XEP-0160)
 │   ├── test_xmpp_helpers.c   # Shared XMPP test helpers (mock write, DB setup, SASL feed, feed_to_online)
 │   ├── test_xmpp_helpers.h   # Shared XMPP test helpers header
 │   ├── test_xmpp_roster.c    # Roster IQ unit tests (get/set/remove)
 │   ├── test_xmpp_sasl.c      # SASL PLAIN authentication unit tests
 │   ├── test_xmpp_starttls.c  # STARTTLS negotiation unit tests
 │   ├── test_xmpp_state.c     # XMPP state machine unit tests (protocol ordering)
-│   ├── xmpp_message.c        # Message routing unit tests
-│   ├── xmpp_presence.c       # Presence routing unit tests (RFC 6121 §4.2/§4.4/§4.6)
 │   ├── xep-0030-service-discovery.c  # XEP-0030 disco#info integration tests
-│   └── xep-0199-ping.c       # XEP-0199 ping integration tests
+│   ├── xep-0199-ping.c       # XEP-0199 ping integration tests
+│   ├── xmpp_message.c        # Message routing unit tests
+│   └── xmpp_presence.c       # Presence routing unit tests (RFC 6121 §4.2/§4.4/§4.6)
 ├── third_party/              # Git-submodule third-party libraries
 │   ├── cmocka/               # Unit testing framework (CMake)
 │   ├── libconfig/            # Configuration file parsing (CMake)

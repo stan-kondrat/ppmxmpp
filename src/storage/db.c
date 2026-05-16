@@ -45,6 +45,17 @@ static const char* MIGRATIONS[] = {
     "    FOREIGN KEY (owner_jid, contact_jid)\n"
     "        REFERENCES roster(owner_jid, contact_jid) ON DELETE CASCADE\n"
     ")\n",
+
+    /* Version 3: offline messages (XEP-0160, XEP-0203) */
+    "CREATE TABLE IF NOT EXISTS offline_messages (\n"
+    "    id              INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+    "    recipient_jid  TEXT NOT NULL,\n"
+    "    sender_jid     TEXT NOT NULL,\n"
+    "    stanza_xml     TEXT NOT NULL,\n"
+    "    received_at    INTEGER NOT NULL,\n"
+    "    bytes_size     INTEGER NOT NULL DEFAULT 0\n"
+    ")\n",
+    "CREATE INDEX IF NOT EXISTS idx_offline_recipient ON offline_messages(recipient_jid, received_at)\n",
 };
 
 static int ensure_directory(const char* path) {
@@ -285,6 +296,14 @@ const char* storage_db_column_text(storage_stmt_t* stmt) {
   }
   const unsigned char* col = sqlite3_column_text(stmt->stmt, 0);
   return col ? (const char*)col : NULL;
+}
+
+const char* storage_db_column_text_col(storage_stmt_t* stmt, int col) {
+  if (!stmt || !stmt->stmt) {
+    return NULL;
+  }
+  const unsigned char* val = sqlite3_column_text(stmt->stmt, col);
+  return val ? (const char*)val : NULL;
 }
 
 char* storage_db_column_text_copy(storage_stmt_t* stmt, int col) {

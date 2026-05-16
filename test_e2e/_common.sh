@@ -127,6 +127,58 @@ wait_for_port() {
     return 1
 }
 
+# =====================================================================
+# Pattern matching helpers
+# =====================================================================
+
+# grep_log FILE PATTERN
+# Returns 0 (success) if PATTERN is found in FILE, 1 otherwise.
+grep_log() {
+    local file="$1"; local pattern="$2"
+    grep -qE "$pattern" "$file" 2>/dev/null
+}
+
+# wait_for_pattern FILE PATTERN TIMEOUT_SEC
+# Polls FILE every 0.5s until PATTERN appears or TIMEOUT is reached.
+# Returns 0 on match, 1 on timeout.
+wait_for_pattern() {
+    local file="$1"; local pattern="$2"; local timeout_sec="$3"
+    local elapsed=0
+    while [ "$elapsed" -lt "$timeout_sec" ]; do
+        if grep_log "$file" "$pattern"; then
+            return 0
+        fi
+        sleep 0.5
+        elapsed=$((elapsed + 1))
+    done
+    return 1
+}
+
+# =====================================================================
+# Session table helpers
+# =====================================================================
+
+# wait_for_session_registered JID CLIENT_NAME CLIENT_LOG
+# Waits up to 20 seconds for a client to complete its connection lifecycle
+# (TCP + TLS + SASL + bind + initial presence) and be registered in the
+# server session table.  Polls the server log for the registration entry.
+# Works with any XMPP client (xmppc, profanity, xmpp-message, etc.) because
+# it only inspects the server-side log.  Exits via fail() on timeout.
+wait_for_session_registered() {
+    local jid="$1"; local name="$2"; local client_log="$3"
+    if wait_for_pattern "$SERVER_LOG" "session: registered ${jid}" 20; then
+        pass "$name is online and registered in session table"
+    else
+        log_debug "=== $name log ==="
+        log_debug "$(cat "$client_log")"
+        fail "$name did not register within 20s — check server and client logs"
+    fi
+}
+
+# =====================================================================
+# Common argument parsing
+# =====================================================================
+
 # parse_common_args [args...]
 # Sets DEBUG=true if --debug is present.
 parse_common_args() {
