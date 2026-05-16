@@ -1,7 +1,7 @@
 #include "xep-0160-offline-messages.h"
 
 #include "storage/db_offline.h"
-#include "stumpless.h"
+#include "log.h"
 #include "xmpp_iq_buf.h"
 
 /* Send a service-unavailable error back to the sender. */

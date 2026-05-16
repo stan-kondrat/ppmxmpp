@@ -4,8 +4,6 @@
 #include "xmpp_presence.h"
 #include "xmpp_sasl.h"
 
-#include "storage/db_offline.h"
-#include "xmpp_session.h"
 
 #include <fcntl.h>
 #include <stdarg.h>
@@ -16,7 +14,7 @@
 
 #include "parser.h"
 #include "strophe.h"
-#include "stumpless.h"
+#include "log.h"
 
 typedef xmpp_ctx_t strophe_ctx_t;
 
@@ -864,7 +862,6 @@ void xmpp_session_cleanup(xmpp_session_t* ctx) {
 }
 
 void xmpp_session_reset(xmpp_session_t* ctx) {
-  xmpp_session_cleanup(ctx);
   memset(ctx, 0, sizeof(*ctx));
   ctx->state = XMPP_STATE_CONNECTED_TCP;
 

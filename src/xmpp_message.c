@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "strophe.h"
-#include "stumpless.h"
+#include "log.h"
 #include "xep-0160-offline-messages.h"
 #include "xep-0280-carbons.h"
 #include "xmpp_iq_buf.h"

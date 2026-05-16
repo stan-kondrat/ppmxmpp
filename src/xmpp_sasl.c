@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "storage/db.h"
-#include "stumpless.h"
+#include "log.h"
 
 /* ------------------------------------------------------------------ */
 /*  Base64 decode (libstrophe's b64 helper is not exported)           */

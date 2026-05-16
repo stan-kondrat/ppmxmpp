@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "strophe.h"
-#include "stumpless.h"
+#include "log.h"
 #include "xmpp_iq_buf.h"
 
 /* ------------------------------------------------------------------ */

@@ -5,7 +5,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "stumpless.h"
+#include "log.h"
 #include "storage/db.h"
 
 /* ------------------------------------------------------------------ */
