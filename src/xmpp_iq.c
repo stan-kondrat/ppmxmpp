@@ -9,6 +9,43 @@
 #include "xmpp_iq_buf.h"
 
 /* ------------------------------------------------------------------ */
+/*  Error response helper                                             */
+/* ------------------------------------------------------------------ */
+
+static void send_iq_error(xmpp_session_t* ctx, const char* iq_id,
+                          const char* err_type, const char* condition) {
+  char buf[IQ_BUF_SIZE];
+  size_t len = 0;
+  int rc;
+  if (iq_id) {
+    rc = iq_append(buf, &len, sizeof(buf),
+                   "<iq type='error' id='%s'><error type='%s'>"
+                   "<%s xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                   "</error></iq>",
+                   iq_id, err_type, condition);
+  } else {
+    rc = iq_append(buf, &len, sizeof(buf),
+                   "<iq type='error'><error type='%s'>"
+                   "<%s xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                   "</error></iq>",
+                   err_type, condition);
+  }
+  if (rc == 0) iq_flush(ctx, buf, len);
+}
+
+static void send_iq_result(xmpp_session_t* ctx, const char* iq_id) {
+  char buf[256];
+  size_t len = 0;
+  int rc;
+  if (iq_id) {
+    rc = iq_append(buf, &len, sizeof(buf), "<iq type='result' id='%s'/>", iq_id);
+  } else {
+    rc = iq_append(buf, &len, sizeof(buf), "<iq type='result'/>");
+  }
+  if (rc == 0) iq_flush(ctx, buf, len);
+}
+
+/* ------------------------------------------------------------------ */
 /*  Roster XML serialisation helpers                                  */
 /* ------------------------------------------------------------------ */
 
@@ -84,7 +121,7 @@ static iq_handler_result_t xmpp_iq_handle_roster_get(xmpp_session_t* ctx, xmpp_s
 
   /* Derive owner bare JID from authcid and domain. */
   char owner[2048];
-  snprintf(owner, sizeof(owner), "%s@%s", ctx->authcid, ctx->domain);
+  (void)snprintf(owner, sizeof(owner), "%s@%s", ctx->authcid, ctx->domain);
 
   char* buf = (char*)malloc(IQ_BUF_SIZE);
   if (!buf) {
@@ -153,14 +190,18 @@ static void send_roster_push(xmpp_session_t* ctx, const storage_roster_item_t* i
                              const char** groups, int gc, const char* push_id) {
   char buf[4096];
   size_t len = 0;
-  iq_append(buf, &len, sizeof(buf),
-            "<iq type='set' id='%s'>"
-            "<query xmlns='jabber:iq:roster'>",
-            push_id);
+  if (iq_append(buf, &len, sizeof(buf),
+                "<iq type='set' id='%s'>"
+                "<query xmlns='jabber:iq:roster'>",
+                push_id) != 0) {
+    return;
+  }
   roster_xml_ctx_t rx = {buf, len, sizeof(buf), 0};
   append_item_xml(&rx, item, groups, gc);
   len = rx.len;
-  iq_append(buf, &len, sizeof(buf), "</query></iq>");
+  if (iq_append(buf, &len, sizeof(buf), "</query></iq>") != 0) {
+    return;
+  }
   iq_flush(ctx, buf, len);
 }
 
@@ -169,28 +210,12 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
   (void)stanza;
 
   char owner[2048];
-  snprintf(owner, sizeof(owner), "%s@%s", ctx->authcid, ctx->domain);
+  (void)snprintf(owner, sizeof(owner), "%s@%s", ctx->authcid, ctx->domain);
 
   /* RFC 6121 §2.1.5: <query> MUST contain exactly one <item>. */
   xmpp_stanza_t* item_el = xmpp_stanza_get_child_by_name(child, "item");
   if (!item_el) {
-    char buf[512];
-    size_t len = 0;
-    if (iq_id) {
-      iq_append(buf, &len, sizeof(buf),
-                "<iq type='error' id='%s'>"
-                "<error type='modify'>"
-                "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>",
-                iq_id);
-    } else {
-      iq_append(buf, &len, sizeof(buf),
-                "<iq type='error'>"
-                "<error type='modify'>"
-                "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>");
-    }
-    iq_flush(ctx, buf, len);
+    send_iq_error(ctx, iq_id, "modify", "bad-request");
     return IQ_ERROR;
   }
 
@@ -198,23 +223,7 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
   xmpp_stanza_t* next = xmpp_stanza_get_next(item_el);
   while (next) {
     if (strcmp(xmpp_stanza_get_name(next), "item") == 0) {
-      char buf[512];
-      size_t len = 0;
-      if (iq_id) {
-        iq_append(buf, &len, sizeof(buf),
-                  "<iq type='error' id='%s'>"
-                  "<error type='modify'>"
-                  "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>",
-                  iq_id);
-      } else {
-        iq_append(buf, &len, sizeof(buf),
-                  "<iq type='error'>"
-                  "<error type='modify'>"
-                  "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>");
-      }
-      iq_flush(ctx, buf, len);
+      send_iq_error(ctx, iq_id, "modify", "bad-request");
       return IQ_ERROR;
     }
     next = xmpp_stanza_get_next(next);
@@ -222,23 +231,7 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
 
   const char* contact_jid = xmpp_stanza_get_attribute(item_el, "jid");
   if (!contact_jid || contact_jid[0] == '\0') {
-    char buf[512];
-    size_t len = 0;
-    if (iq_id) {
-      iq_append(buf, &len, sizeof(buf),
-                "<iq type='error' id='%s'>"
-                "<error type='modify'>"
-                "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>",
-                iq_id);
-    } else {
-      iq_append(buf, &len, sizeof(buf),
-                "<iq type='error'>"
-                "<error type='modify'>"
-                "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>");
-    }
-    iq_flush(ctx, buf, len);
+    send_iq_error(ctx, iq_id, "modify", "bad-request");
     return IQ_ERROR;
   }
 
@@ -247,41 +240,18 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
 
   if (is_remove) {
     if (storage_roster_remove(owner, contact_jid) != 0) {
-      char buf[512];
-      size_t len = 0;
-      if (iq_id) {
-        iq_append(buf, &len, sizeof(buf),
-                  "<iq type='error' id='%s'>"
-                  "<error type='cancel'>"
-                  "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>",
-                  iq_id);
-      } else {
-        iq_append(buf, &len, sizeof(buf),
-                  "<iq type='error'>"
-                  "<error type='cancel'>"
-                  "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>");
-      }
-      iq_flush(ctx, buf, len);
+      send_iq_error(ctx, iq_id, "cancel", "internal-server-error");
       return IQ_ERROR;
     }
 
-    char ack[256];
-    size_t ack_len = 0;
-    if (iq_id) {
-      iq_append(ack, &ack_len, sizeof(ack), "<iq type='result' id='%s'/>", iq_id);
-    } else {
-      iq_append(ack, &ack_len, sizeof(ack), "<iq type='result'/>");
-    }
-    iq_flush(ctx, ack, ack_len);
+    send_iq_result(ctx, iq_id);
 
     char push_id[32];
-    snprintf(push_id, sizeof(push_id), "push-%s", iq_id ? iq_id : "r");
+    (void)snprintf(push_id, sizeof(push_id), "push-%s", iq_id ? iq_id : "r");
     storage_roster_item_t push_item;
     memset(&push_item, 0, sizeof(push_item));
-    strncpy(push_item.contact_jid, contact_jid, sizeof(push_item.contact_jid) - 1);
-    strncpy(push_item.subscription, "remove", sizeof(push_item.subscription) - 1);
+    (void)snprintf(push_item.contact_jid, sizeof(push_item.contact_jid), "%s", contact_jid);
+    (void)snprintf(push_item.subscription, sizeof(push_item.subscription), "%s", "remove");
     send_roster_push(ctx, &push_item, NULL, 0, push_id);
 
     stump_d("roster remove owner=%s contact=%s", owner, contact_jid);
@@ -310,47 +280,24 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
 
   storage_roster_item_t item;
   memset(&item, 0, sizeof(item));
-  strncpy(item.contact_jid, contact_jid, sizeof(item.contact_jid) - 1);
+  (void)snprintf(item.contact_jid, sizeof(item.contact_jid), "%s", contact_jid);
   if (name_attr) {
-    strncpy(item.name, name_attr, sizeof(item.name) - 1);
+    (void)snprintf(item.name, sizeof(item.name), "%s", name_attr);
   }
-  strncpy(item.subscription, "none", sizeof(item.subscription) - 1);
+  (void)snprintf(item.subscription, sizeof(item.subscription), "%s", "none");
 
   if (storage_roster_upsert(owner, &item, groups, gc) != 0) {
     for (int i = 0; i < gc; i++) {
       free(group_allocs[i]);
     }
-    char buf[512];
-    size_t len = 0;
-    if (iq_id) {
-      iq_append(buf, &len, sizeof(buf),
-                "<iq type='error' id='%s'>"
-                "<error type='cancel'>"
-                "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>",
-                iq_id);
-    } else {
-      iq_append(buf, &len, sizeof(buf),
-                "<iq type='error'>"
-                "<error type='cancel'>"
-                "<internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                "</error></iq>");
-    }
-    iq_flush(ctx, buf, len);
+    send_iq_error(ctx, iq_id, "cancel", "internal-server-error");
     return IQ_ERROR;
   }
 
-  char ack[256];
-  size_t ack_len = 0;
-  if (iq_id) {
-    iq_append(ack, &ack_len, sizeof(ack), "<iq type='result' id='%s'/>", iq_id);
-  } else {
-    iq_append(ack, &ack_len, sizeof(ack), "<iq type='result'/>");
-  }
-  iq_flush(ctx, ack, ack_len);
+  send_iq_result(ctx, iq_id);
 
   char push_id[32];
-  snprintf(push_id, sizeof(push_id), "push-%s", iq_id ? iq_id : "r");
+  (void)snprintf(push_id, sizeof(push_id), "push-%s", iq_id ? iq_id : "r");
   send_roster_push(ctx, &item, groups, gc, push_id);
 
   for (int i = 0; i < gc; i++) {

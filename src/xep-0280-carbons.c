@@ -25,12 +25,12 @@
 #define SESSION_TABLE_CAP 256
 
 typedef struct {
-  char bound_jid[3073];
   xmpp_write_fn write_fn;
   void* write_ud;
-  int priority;
   uint64_t last_active;
+  int priority;
   int carbons_enabled;
+  char bound_jid[3073];
 } session_entry_t;
 
 extern session_entry_t g_sessions[SESSION_TABLE_CAP];
@@ -96,8 +96,9 @@ static iq_handler_result_t xep0280_handle_carbons_iq(xmpp_session_t* ctx, xmpp_s
   if (iq_id) {
     char buf[128];
     size_t len = 0;
-    iq_append(buf, &len, sizeof(buf), "<iq type='result' id='%s'/>", iq_id);
-    iq_flush(ctx, buf, len);
+    if (iq_append(buf, &len, sizeof(buf), "<iq type='result' id='%s'/>", iq_id) == 0) {
+      iq_flush(ctx, buf, len);
+    }
   }
   return IQ_HANDLED;
 }

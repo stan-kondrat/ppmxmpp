@@ -20,6 +20,16 @@
 - `autoconf`, `automake`, `libtool` — required by libstrophe (Autotools-based)
 - `python3-jsonschema` — required by mbedtls to generate PSA crypto driver wrappers
 
+#### Void Linux
+
+```
+xbps-install -S base-devel cmake autoconf automake libtool \
+    python3-jsonschema clang clang-tools-extra lcov
+```
+
+Optional tooling for `make tidy`:
+
+
 Initialize submodules after cloning:
 ```
 git submodule update --init --recursive
@@ -65,6 +75,16 @@ make test
 Run end-to-end tests (shell scripts):
 ```
 make test-e2e
+```
+
+Run with address/undefined-behaviour sanitizers:
+```
+make BUILD=asan test
+```
+
+Run static analysis (requires `clang-tidy`):
+```
+make tidy
 ```
 
 ## Configuration

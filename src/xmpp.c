@@ -23,9 +23,9 @@ typedef xmpp_ctx_t strophe_ctx_t;
 /* ------------------------------------------------------------------ */
 /*  Forward declarations                                               */
 /* ------------------------------------------------------------------ */
-static int _send_stream_features(xmpp_session_t* ctx);
-static int _send_stream_close(xmpp_session_t* ctx);
-static const char* _state_name(xmpp_state_t state);
+static int send_stream_features(xmpp_session_t* ctx);
+static int send_stream_close(xmpp_session_t* ctx);
+static const char* state_name(xmpp_state_t state);
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -33,7 +33,7 @@ static const char* _state_name(xmpp_state_t state);
 
 /* Extract namespace declarations from raw XML data.
  * Sets *client_ns and *stream_ns to the values of xmlns='' and xmlns:stream=''. */
-static void _extract_namespaces(const char* data, size_t len, char* client_ns,
+static void extract_namespaces(const char* data, size_t len, char* client_ns,
                                 size_t client_ns_size, char* stream_ns, size_t stream_ns_size) {
   const char* p = data;
   const char* end = data + len;
@@ -119,7 +119,7 @@ static int write_append(xmpp_session_t* ctx, const char* fmt, ...) {
   return 0;
 }
 
-static int _is_forbidden_resource_char(unsigned char ch) {
+static int is_forbidden_resource_char(unsigned char ch) {
   if (ch < 0x20 || ch == 0x7f) {
     return 1;
   }
@@ -132,20 +132,22 @@ static int _is_forbidden_resource_char(unsigned char ch) {
   case '>':
   case '@':
     return 1;
+  default:
+    return 0;
   }
   return 0;
 }
 
 /* Returns 0 if resource is valid per RFC 7622 §3.4 (stub), -1 otherwise. */
-static int _validate_resource(const char* res) {
+static int validate_resource(const char* res) {
   size_t len = strlen(res);
   if (len == 0 || len > 1023) {
-    stump_er("_validate_resource: invalid length %zu", len);
+    stump_d("validate_resource: invalid length %zu", len);
     return -1;
   }
   for (size_t i = 0; i < len; i++) {
-    if (_is_forbidden_resource_char((unsigned char)res[i])) {
-      stump_er("_validate_resource: forbidden character at index %zu", i);
+    if (is_forbidden_resource_char((unsigned char)res[i])) {
+      stump_d("validate_resource: forbidden character at index %zu", i);
       return -1;
     }
   }
@@ -153,14 +155,14 @@ static int _validate_resource(const char* res) {
 }
 
 /* Write 8 random hex characters into buf (must be >= 9 bytes). */
-static void _gen_resource(char* buf) {
+static void gen_resource(char* buf) {
   unsigned char rnd[4] = {0};
   int fd = open("/dev/urandom", O_RDONLY);
   if (fd >= 0) {
     (void)read(fd, rnd, sizeof(rnd));
     close(fd);
   }
-  snprintf(buf, 9, "%02x%02x%02x%02x", rnd[0], rnd[1], rnd[2], rnd[3]);
+  (void)snprintf(buf, 9, "%02x%02x%02x%02x", rnd[0], rnd[1], rnd[2], rnd[3]);
 }
 
 /* Send the buffered data and reset the buffer. */
@@ -191,9 +193,11 @@ static void send_stream_error(xmpp_session_t* ctx, ppmxmpp_stream_error_t error,
   case PPMXMPP_STREAM_ERROR_NOT_AUTHORIZED:
     error_qname = "not-authorized";
     break;
+  default:
+    break;
   }
 
-  stump_d("stream error conn_id='%s' state=%s error=%s", ctx->conn_id, _state_name(ctx->state),
+  stump_d("stream error conn_id='%s' state=%s error=%s", ctx->conn_id, state_name(ctx->state),
           error_qname);
 
   write_append(ctx,
@@ -202,7 +206,7 @@ static void send_stream_error(xmpp_session_t* ctx, ppmxmpp_stream_error_t error,
   write_flush(ctx, write_fn, ud);
 
   /* Send </stream:stream> after stream:error per RFC 6120 §4.4.4. */
-  _send_stream_close(ctx);
+  send_stream_close(ctx);
 
   if (ctx->stream_error_fn) {
     ctx->stream_error_fn(error, ctx->stream_error_ud);
@@ -223,7 +227,7 @@ typedef enum {
   XMPP_EVENT_TCP_CLOSE,
 } xmpp_event_t;
 
-static const char* _event_name(xmpp_event_t event) {
+static const char* event_name(xmpp_event_t event) {
   switch (event) {
   case XMPP_EVENT_STREAM_OPEN:
     return "stream_open";
@@ -239,7 +243,7 @@ static const char* _event_name(xmpp_event_t event) {
   return "unknown";
 }
 
-static const char* _state_name(xmpp_state_t state) {
+static const char* state_name(xmpp_state_t state) {
   switch (state) {
   case XMPP_STATE_DISCONNECTED:
     return "DISCONNECTED";
@@ -281,7 +285,7 @@ static const char* _state_name(xmpp_state_t state) {
 
 /* Transition validation table: (from_state, event) → to_state.
  * Returns the target state, or XMPP_STATE_CLOSED for invalid transitions. */
-static xmpp_state_t _validate_transition(xmpp_state_t from, xmpp_event_t event) {
+static xmpp_state_t validate_transition(xmpp_state_t from, xmpp_event_t event) {
   switch (event) {
   case XMPP_EVENT_STREAM_OPEN:
     if (from == XMPP_STATE_CONNECTED_TCP) {
@@ -320,29 +324,29 @@ static xmpp_state_t _validate_transition(xmpp_state_t from, xmpp_event_t event) 
 
 /* Transition to a new state, send stream:features, then advance to the
  * stable FEATURES_RECEIVED_* / BOUND state.  Returns 0 on success, -1 on error. */
-static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, xmpp_event_t event) {
+static int transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, xmpp_event_t event) {
   xmpp_state_t from_state = ctx->state;
 
-  xmpp_state_t allowed = _validate_transition(from_state, event);
+  xmpp_state_t allowed = validate_transition(from_state, event);
   if (allowed == XMPP_STATE_CLOSED && new_state != XMPP_STATE_CLOSED) {
     stump_w("stream invalid-transition conn_id='%s' from=%s event=%s", ctx->conn_id,
-            _state_name(from_state), _event_name(event));
+            state_name(from_state), event_name(event));
     send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
     ctx->state = XMPP_STATE_CLOSING;
     ctx->pending_error = 1;
-    stump_er("_transition_to: invalid transition");
+    stump_er("transition_to: invalid transition");
     return -1;
   }
 
   ctx->state = new_state;
 
-  if (_send_stream_features(ctx) != 0) {
-    stump_er("_transition_to: _send_stream_features failed");
+  if (send_stream_features(ctx) != 0) {
+    stump_er("transition_to: send_stream_features failed");
     ctx->pending_error = 1;
     return -1;
   }
   if (write_flush(ctx, ctx->write_fn, ctx->write_ud) != 0) {
-    stump_er("_transition_to: write_flush failed");
+    stump_er("transition_to: write_flush failed");
     ctx->pending_error = 1;
     return -1;
   }
@@ -358,7 +362,7 @@ static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, xmpp_even
   }
 
   stump_d("stream transition conn_id='%s' from=%s event=%s to=%s", ctx->conn_id,
-          _state_name(from_state), _event_name(event), _state_name(ctx->state));
+          state_name(from_state), event_name(event), state_name(ctx->state));
 
   return 0;
 }
@@ -367,7 +371,7 @@ static int _transition_to(xmpp_session_t* ctx, xmpp_state_t new_state, xmpp_even
 /*  Features advertisement                                             */
 /* ------------------------------------------------------------------ */
 
-static int _send_stream_features(xmpp_session_t* ctx) {
+static int send_stream_features(xmpp_session_t* ctx) {
   switch (ctx->state) {
   case XMPP_STATE_STREAM_OPENED:
     /* RFC 6120 §5: offer STARTTLS before any auth. */
@@ -376,7 +380,7 @@ static int _send_stream_features(xmpp_session_t* ctx) {
                           "<required/>"
                           "</starttls>"
                           "</stream:features>") != 0) {
-      stump_er("_send_stream_features: buffer overflow (starttls)");
+      stump_er("send_stream_features: buffer overflow (starttls)");
       return -1;
     }
     break;
@@ -389,7 +393,7 @@ static int _send_stream_features(xmpp_session_t* ctx) {
                           "<mechanism>PLAIN</mechanism>"
                           "</mechanisms>"
                           "</stream:features>") != 0) {
-      stump_er("_send_stream_features: buffer overflow (sasl)");
+      stump_er("send_stream_features: buffer overflow (sasl)");
       return -1;
     }
     break;
@@ -401,7 +405,7 @@ static int _send_stream_features(xmpp_session_t* ctx) {
                           "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
                           "<required/></bind>"
                           "</stream:features>") != 0) {
-      stump_er("_send_stream_features: buffer overflow (bind)");
+      stump_er("send_stream_features: buffer overflow (bind)");
       return -1;
     }
     break;
@@ -418,21 +422,21 @@ static int _send_stream_features(xmpp_session_t* ctx) {
 
 /* Send </stream:stream> end element and transition to CLOSING.
  * Per RFC 6120 §4.4.4, the server MAY close the stream at any time. */
-static int _send_stream_close(xmpp_session_t* ctx) {
+static int send_stream_close(xmpp_session_t* ctx) {
   if (ctx->state == XMPP_STATE_CLOSING || ctx->state == XMPP_STATE_CLOSED) {
     return 0;
   }
 
-  stump_d("stream close conn_id='%s' state=%s", ctx->conn_id, _state_name(ctx->state));
+  stump_d("stream close conn_id='%s' state=%s", ctx->conn_id, state_name(ctx->state));
 
   int rc = write_append(ctx, "</stream:stream>");
   if (rc != 0) {
-    stump_er("_send_stream_close: write_append failed");
+    stump_er("send_stream_close: write_append failed");
     return -1;
   }
   rc = write_flush(ctx, ctx->write_fn, ctx->write_ud);
   if (rc != 0) {
-    stump_er("_send_stream_close: write_flush failed");
+    stump_er("send_stream_close: write_flush failed");
     return -1;
   }
 
@@ -524,7 +528,7 @@ static void on_stream_start(char* name, char** attrs, void* ud) {
     }
   }
   if (!ctx->domain[0]) {
-    strncpy(ctx->domain, "localhost", sizeof(ctx->domain) - 1);
+    (void)snprintf(ctx->domain, sizeof(ctx->domain), "%s", "localhost");
   }
 
   stump_d("stream open conn_id='%s' domain=%s", ctx->conn_id, ctx->domain);
@@ -538,17 +542,17 @@ static void on_stream_start(char* name, char** attrs, void* ud) {
   int rc = -1;
   switch (ctx->state) {
   case XMPP_STATE_CONNECTED_TCP:
-    rc = _transition_to(ctx, XMPP_STATE_STREAM_OPENED, XMPP_EVENT_STREAM_OPEN);
+    rc = transition_to(ctx, XMPP_STATE_STREAM_OPENED, XMPP_EVENT_STREAM_OPEN);
     break;
   case XMPP_STATE_TLS_NEGOTIATED:
   case XMPP_STATE_STARTTLS_SENT:
-    rc = _transition_to(ctx, XMPP_STATE_STREAM_RESTARTED_POST_TLS, XMPP_EVENT_STREAM_OPEN);
+    rc = transition_to(ctx, XMPP_STATE_STREAM_RESTARTED_POST_TLS, XMPP_EVENT_STREAM_OPEN);
     break;
   case XMPP_STATE_SASL_SUCCESS:
-    rc = _transition_to(ctx, XMPP_STATE_STREAM_RESTARTED_POST_SASL, XMPP_EVENT_STREAM_OPEN);
+    rc = transition_to(ctx, XMPP_STATE_STREAM_RESTARTED_POST_SASL, XMPP_EVENT_STREAM_OPEN);
     break;
   default:
-    stump_w("stream unexpected-open conn_id='%s' state=%s", ctx->conn_id, _state_name(ctx->state));
+    stump_w("stream unexpected-open conn_id='%s' state=%s", ctx->conn_id, state_name(ctx->state));
     ctx->pending_error = 1;
     break;
   }
@@ -561,11 +565,11 @@ static void on_stream_end(char* name, void* ud) {
   (void)name;
   xmpp_session_t* ctx = (xmpp_session_t*)ud;
 
-  stump_d("stream end conn_id='%s' state=%s", ctx->conn_id, _state_name(ctx->state));
+  stump_d("stream end conn_id='%s' state=%s", ctx->conn_id, state_name(ctx->state));
 
   /* RFC 6120 §4.4.4: on receiving </stream:stream>, send </stream:stream> in response. */
   if (ctx->state != XMPP_STATE_CLOSING && ctx->state != XMPP_STATE_CLOSED) {
-    _send_stream_close(ctx);
+    send_stream_close(ctx);
     ctx->state = XMPP_STATE_CLOSING;
   }
 }
@@ -573,7 +577,7 @@ static void on_stream_end(char* name, void* ud) {
 static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
   xmpp_session_t* ctx = (xmpp_session_t*)ud;
 
-  stump_d("stream stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id, _state_name(ctx->state),
+  stump_d("stream stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id, state_name(ctx->state),
           xmpp_stanza_get_name(stanza));
   /* Debug: log stanza attributes */
   {
@@ -614,7 +618,7 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     }
     if (strcmp(xmpp_stanza_get_name(stanza), "starttls") != 0) {
       stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-              _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+              state_name(ctx->state), xmpp_stanza_get_name(stanza));
       send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
       ctx->state = XMPP_STATE_CLOSING;
       ctx->pending_error = 1;
@@ -645,7 +649,7 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     /* TLS active — only <auth/> expected. */
     if (strcmp(xmpp_stanza_get_name(stanza), "auth") != 0) {
       stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-              _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+              state_name(ctx->state), xmpp_stanza_get_name(stanza));
       send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
       ctx->state = XMPP_STATE_CLOSING;
       ctx->pending_error = 1;
@@ -716,7 +720,7 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     const char* iq_type = xmpp_stanza_get_attribute(stanza, "type");
     if (!iq_type || strcmp(iq_type, "set") != 0) {
       stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-              _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+              state_name(ctx->state), xmpp_stanza_get_name(stanza));
       send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
       ctx->state = XMPP_STATE_CLOSING;
       ctx->pending_error = 1;
@@ -727,7 +731,7 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     const xmpp_stanza_t* bind = xmpp_stanza_get_child_by_name(stanza, "bind");
     if (!bind) {
       stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-              _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+              state_name(ctx->state), xmpp_stanza_get_name(stanza));
       send_stream_error(ctx, PPMXMPP_STREAM_ERROR_NOT_WELL_FORMED, ctx->write_fn, ctx->write_ud);
       ctx->state = XMPP_STATE_CLOSING;
       ctx->pending_error = 1;
@@ -738,7 +742,7 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     /* xmpp_stanza_get_text allocates — must free; get_text_ptr only works on text nodes. */
     char* res_text = res_el ? xmpp_stanza_get_text(res_el) : NULL;
 
-    if (res_text && res_text[0] != '\0' && _validate_resource(res_text) != 0) {
+    if (res_text && res_text[0] != '\0' && validate_resource(res_text) != 0) {
       stump_d("stream bind-invalid-resource conn_id='%s'", ctx->conn_id);
       free(res_text);
       int bad_rc;
@@ -772,14 +776,14 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     } else {
       free(res_text);
       res_text = NULL;
-      _gen_resource(res_buf);
+      gen_resource(res_buf);
       resource = res_buf;
     }
 
-    snprintf(ctx->resource, sizeof(ctx->resource), "%s", resource);
+    (void)snprintf(ctx->resource, sizeof(ctx->resource), "%s", resource);
     free(res_text);
-    snprintf(ctx->bound_jid, sizeof(ctx->bound_jid), "%s@%s/%s", ctx->authcid, ctx->domain,
-             ctx->resource);
+    (void)snprintf(ctx->bound_jid, sizeof(ctx->bound_jid), "%s@%s/%s", ctx->authcid, ctx->domain,
+                   ctx->resource);
 
     stump_d("stream bind conn_id='%s' iq_id=%s resource=%s", ctx->conn_id, iq_id ? iq_id : "(none)",
             ctx->resource);
@@ -825,8 +829,8 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
   }
 
   default:
-    stump_w("stream unexpected-stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id,
-            _state_name(ctx->state), xmpp_stanza_get_name(stanza));
+    stump_d("stream unexpected-stanza conn_id='%s' state=%s stanza=%s", ctx->conn_id,
+            state_name(ctx->state), xmpp_stanza_get_name(stanza));
     break;
   }
 }
@@ -872,8 +876,8 @@ void xmpp_session_reset(xmpp_session_t* ctx) {
       (void)read(fd, rnd, sizeof(rnd));
       close(fd);
     }
-    snprintf(ctx->stream_id, sizeof(ctx->stream_id), "%02x%02x%02x%02x%02x%02x%02x%02x", rnd[0],
-             rnd[1], rnd[2], rnd[3], rnd[4], rnd[5], rnd[6], rnd[7]);
+    (void)snprintf(ctx->stream_id, sizeof(ctx->stream_id), "%02x%02x%02x%02x%02x%02x%02x%02x",
+                   rnd[0], rnd[1], rnd[2], rnd[3], rnd[4], rnd[5], rnd[6], rnd[7]);
   }
 
   strophe_ctx_t* sc = xmpp_ctx_new(NULL, NULL);
@@ -917,7 +921,7 @@ int xmpp_feed(xmpp_session_t* ctx, const char* data, size_t len, xmpp_write_fn w
 
   /* Extract namespace declarations from raw XML before feeding to parser.
    * libstrophe does not pass xmlns declarations as regular attributes. */
-  _extract_namespaces(data, len, ctx->client_ns, sizeof(ctx->client_ns), ctx->stream_ns,
+  extract_namespaces(data, len, ctx->client_ns, sizeof(ctx->client_ns), ctx->stream_ns,
                       sizeof(ctx->stream_ns));
 
   /* Debug: log raw data being fed to parser (first 256 chars) */

@@ -17,18 +17,19 @@
 │   ├── storage/              # Database and storage headers
 │   │   ├── db.h              # SQLite DB abstraction header
 │   │   ├── db_offline.h      # Offline message storage header (XEP-0160, XEP-0203)
-│   │   ├── db_roster.h      # Roster storage header
-│   │   └── db_users.h       # User storage header
+│   │   ├── db_roster.h       # Roster storage header
+│   │   └── db_users.h        # User storage header
 │   ├── tls.h                 # TLS module header
 │   ├── xmpp.h                # XMPP protocol module header
 │   ├── xmpp_iq.h             # IQ dispatch module header
 │   ├── xmpp_iq_buf.h         # Inline helpers: iq_append / iq_flush (shared by IQ handlers)
+│   ├── xmpp_iq_dispatch.h    # IQ handler dispatch table header
 │   ├── xmpp_message.h        # Message routing module header
 │   ├── xmpp_presence.h       # Presence routing module header (session registry + handler)
 │   ├── xmpp_sasl.h           # SASL authentication module header (sasl_rc_t + handle_sasl_plain)
 │   ├── xmpp_session.h        # XMPP session state header
 │   ├── xep-0030-service-discovery.h  # XEP-0030 disco#info handler header
-│   ├── xep-0160-offline-messages.h  # XEP-0160 offline message storage handler header
+│   ├── xep-0160-offline-messages.h   # XEP-0160 offline message storage handler header
 │   ├── xep-0199-ping.h       # XEP-0199 ping handler header
 │   └── xep-0280-carbons.h    # XEP-0280 message carbons enable/disable + carbon dispatch header
 ├── scripts/                  # Utility scripts
@@ -45,12 +46,13 @@
 │   ├── tls.c                 # TLS certificate/key management
 │   ├── xmpp.c                # XMPP protocol handling (stream negotiation, bind)
 │   ├── xmpp_iq.c             # IQ stanza dispatch (roster, XEP-0030, XEP-0199, errors)
+│   ├── xmpp_iq_dispatch.c    # IQ handler dispatch table implementation
 │   ├── xmpp_message.c        # Message routing implementation
 │   ├── xmpp_presence.c       # Presence routing (RFC 6121 §4.2/§4.4/§4.6; session registry)
 │   ├── xmpp_sasl.c           # SASL PLAIN authentication (RFC 4616 + RFC 7622)
 │   ├── xmpp_session.c        # XMPP session state management
 │   ├── xep-0030-service-discovery.c  # XEP-0030: disco#info handler
-│   ├── xep-0160-offline-messages.c  # XEP-0160: offline message store + cap error
+│   ├── xep-0160-offline-messages.c   # XEP-0160: offline message store + cap error
 │   ├── xep-0199-ping.c       # XEP-0199: ping handler
 │   └── xep-0280-carbons.c    # XEP-0280: per-resource carbons opt-in + <sent>/<received> dispatch
 ├── test_e2e/                 # End-to-end integration tests (shell scripts)
@@ -59,6 +61,7 @@
 │   ├── _helpers_xmpp-message.sh # Helpers for xmpp-message-based E2E tests
 │   ├── _helpers_xmppc.sh     # Helpers for xmppc-based E2E tests
 │   ├── auth.sh               # E2E: server starts with TLS, profanity connects
+│   ├── message_carbons.sh    # E2E: XEP-0280 carbons — multi-device <sent>/<received> copies
 │   ├── message_routing_profanity.sh # E2E: message routing with profanity
 │   ├── message_routing_xmppc.sh # E2E: message routing (bare/full JID, 3-user bidirectional) with xmppc
 │   ├── offline_messages_profanity.sh # E2E: offline message delivery with profanity
@@ -67,15 +70,14 @@
 │   ├── profanity_bind.sh     # E2E: profanity binds a resource; verifies full JID in result
 │   ├── profanity_connect.sh  # E2E: profanity authenticates and reaches ONLINE state
 │   ├── sasl_auth_failure_cap.sh # E2E: three bad passwords close stream with <policy-violation/>
-│   ├── message_carbons.sh    # E2E: XEP-0280 carbons — multi-device <sent>/<received> copies
 │   ├── tls_auto_generation.sh # E2E: server auto-generates self-signed cert
 │   └── tls_connection.sh     # E2E: server loads external cert, openssl s_client connects
 ├── tests/                    # Unit tests (C, using cmocka)
 │   ├── test_config.c         # Config module unit tests
 │   ├── test_db.c             # Database module unit tests
+│   ├── test_offline.c        # Offline message storage unit tests (XEP-0160)
 │   ├── test_server.c         # Server module unit tests
 │   ├── test_users.c          # Users module unit tests
-│   ├── test_offline.c        # Offline message storage unit tests (XEP-0160)
 │   ├── test_xmpp_helpers.c   # Shared XMPP test helpers (mock write, DB setup, SASL feed, feed_to_online)
 │   ├── test_xmpp_helpers.h   # Shared XMPP test helpers header
 │   ├── test_xmpp_roster.c    # Roster IQ unit tests (get/set/remove)
@@ -100,20 +102,20 @@
 │   ├── rfc5766-stun-turn.txt          # STUN/TURN relay support
 │   ├── rfc5802-scram.txt              # SCRAM authentication mechanism
 │   ├── rfc6120-xmpp-core.txt          # XMPP Core (stream negotiation, TLS, SASL)
-│   ├── rfc6121-xmpp-im.txt             # XMPP IM (roster, presence, stanzas)
+│   ├── rfc6121-xmpp-im.txt            # XMPP IM (roster, presence, stanzas)
 │   ├── rfc7622-jid-format.txt         # XMPP JID format (RFC 7622)
 │   ├── rfc7677-scram-sha256.txt       # SCRAM-SHA-256 mechanism
 │   ├── rfc8155-websocket.txt          # WebSocket binding for XMPP
 │   ├── rfc8553-tcp.txt                # TCP binding for XMPP
 │   ├── rfc8656-turn.txt               # TURN relay protocol
-│   ├── rfc8829-websocket.txt          # WebSocket transport for XMPP
+│   ├── rfc8829-WebSocket.txt          # WebSocket transport for XMPP
 │   ├── rfc9266-cbOR.txt               # Channel Binding OTP
-│   ├── xep-0027-gpg-sign.xml           # GPG signed XMPP stanzas
-│   ├── xep-0030-caps.xml               # Common Alerting Protocol
-│   ├── xep-0045-muc.xml                # Multi-User Chat
+│   ├── xep-0027-gpg-sign.xml          # GPG signed XMPP stanzas
+│   ├── xep-0030-caps.xml              # Common Alerting Protocol
+│   ├── xep-0045-muc.xml               # Multi-User Chat
 │   ├── xep-0048-bookmarks.xml         # Bookmarks
-│   ├── xep-0049-pprivate.xml           # Private XML Storage
-│   ├── xep-0054-vcard-temp.xml         # vCard Temporary Protocol
+│   ├── xep-0049-pprivate.xml          # Private XML Storage
+│   ├── xep-0054-vcard-temp.xml        # vCard Temporary Protocol
 │   ├── xep-0059-roster-ver.xml        # Roster Versioning
 │   ├── xep-0060-pubsub.xml            # Publish-Subscribe
 │   ├── xep-0065-s5b.xml               # SOCKS5 Bytestreams
@@ -127,14 +129,14 @@
 │   ├── xep-0176-ignore.xml            # Ignoring Messages
 │   ├── xep-0184-receipts.xml          # Message Delivery Receipts
 │   ├── xep-0191-ping.xml              # Ping over XMPP
-│   ├── xep-0198-stream-mgmt.xml        # Stream Management
+│   ├── xep-0198-stream-mgmt.xml       # Stream Management
 │   ├── xep-0199-ping.xml              # XMPP Ping
 │   ├── xep-0203-time.xml              # Time
 │   ├── xep-0215-enc-keys.xml          # Encryption Keys
 │   ├── xep-0234-omemo.xml             # OMEMO Encryption
 │   ├── xep-0237-ft.xml                # File Transfer
 │   ├── xep-0245-leave-muc.xml         # Leaving a MUC Room
-│   ├── xep-0249-mini-presence.xml    # Minimal Presence
+│   ├── xep-0249-mini-presence.xml     # Minimal Presence
 │   ├── xep-0280-carbons.xml           # Message Carbons
 │   ├── xep-0297-hints.xml             # Stanza Hints
 │   ├── xep-0313-mam.xml               # Message Archive Management

@@ -14,4 +14,7 @@ void log_init(void);
 /* Close the log target and free stumpless resources. */
 void log_free(void);
 
+/* Suppress all messages below WARNING. Call after log_init() in test harnesses. */
+void log_silence(void);
+
 #endif /* LOG_H */

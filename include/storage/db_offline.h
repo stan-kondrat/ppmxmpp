@@ -7,7 +7,7 @@
 #define OFFLINE_MAX_MESSAGES 100
 
 /* Maximum total bytes of offline messages per user. */
-#define OFFLINE_MAX_BYTES (1024 * 1024) /* 1 MB */
+#define OFFLINE_MAX_BYTES (1024LL * 1024) /* 1 MB */
 
 /* Store a message for an offline recipient.
  * Returns 0 on success, -1 on error.

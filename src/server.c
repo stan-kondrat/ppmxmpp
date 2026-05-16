@@ -12,8 +12,13 @@
 #include "mbedtls/net_sockets.h"
 #include "mbedtls/ssl.h"
 #include "server.h"
+#include "storage/db.h"
 #include "tls.h"
+#include "xep-0030-service-discovery.h"
+#include "xep-0199-ping.h"
+#include "xep-0280-carbons.h"
 #include "xmpp.h"
+#include "xmpp_iq_dispatch.h"
 #include "xmpp_presence.h"
 
 #include <sys/stat.h>
@@ -486,3 +491,51 @@ int server_start(uv_loop_t* loop) {
 
   return 0;
 }
+
+int server_init(void) {
+  log_init();  /* idempotent if already called */
+  if (iq_dispatch_init() != 0) {
+    stump_er("server_init: iq_dispatch_init failed");
+    log_free();
+    return -1;
+  }
+  if (xmpp_iq_register_handlers() != 0) {
+    stump_er("server_init: xmpp_iq_register_handlers failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  if (xep0030_init() != 0) {
+    stump_er("server_init: xep0030_init failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  if (xep0199_init() != 0) {
+    stump_er("server_init: xep0199_init failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  if (xep0280_init() != 0) {
+    stump_er("server_init: xep0280_init failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  sqlite3* db = NULL;
+  if (storage_db_open(&db) != 0) {
+    stump_er("server_init: storage_db_open failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  return 0;
+}
+
+void server_shutdown(void) {
+  storage_db_close();
+  iq_dispatch_shutdown();
+  log_free();
+}
+

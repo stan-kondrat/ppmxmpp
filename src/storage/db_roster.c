@@ -295,6 +295,7 @@ int storage_roster_get_groups(const char* owner_jid, const char* contact_jid,
       count++;
     }
   }
+  (void)rc;
 
   storage_db_reset(stmt);
   return count;

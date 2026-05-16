@@ -56,12 +56,6 @@ static int message_test_teardown(void** state) {
 
 /* Drive a second user (bob/testpass) to ONLINE and register with a sink. */
 static int feed_bob_to_online(xmpp_session_t* ctx, const char* resource) {
-  sqlite3* db;
-  if (storage_db_open(&db) == 0) {
-    storage_users_create("bob@localhost", "testpass");
-    storage_db_close();
-  }
-
   memset(ctx, 0, sizeof(*ctx));
   xmpp_session_reset(ctx);
 

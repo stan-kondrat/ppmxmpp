@@ -113,9 +113,9 @@ static int update_subscription(const char* owner, const char* contact,
     item = existing;
   } else {
     memset(&item, 0, sizeof(item));
-    strncpy(item.contact_jid, contact, sizeof(item.contact_jid) - 1);
+    (void)snprintf(item.contact_jid, sizeof(item.contact_jid), "%s", contact);
   }
-  strncpy(item.subscription, subscription, sizeof(item.subscription) - 1);
+  (void)snprintf(item.subscription, sizeof(item.subscription), "%s", subscription);
   item.ask = ask;
 
   sqlite3* db;
@@ -169,8 +169,9 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
   /* A's view of B (from_bare → to_bare) */
   storage_roster_item_t a_item;
   memset(&a_item, 0, sizeof(a_item));
-  strncpy(a_item.contact_jid, to_bare, sizeof(a_item.contact_jid) - 1);
-  strncpy(a_item.subscription, "none", sizeof(a_item.subscription) - 1);
+  (void)snprintf(a_item.contact_jid, sizeof(a_item.contact_jid), "%.*s",
+                 (int)(sizeof(a_item.contact_jid) - 1), to_bare);
+  (void)snprintf(a_item.subscription, sizeof(a_item.subscription), "%s", "none");
 
   if (storage_db_open(&db) == 0) {
     storage_roster_item_t tmp;
@@ -183,8 +184,8 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
   /* B's view of A (to_bare → from_bare) */
   storage_roster_item_t b_item;
   memset(&b_item, 0, sizeof(b_item));
-  strncpy(b_item.contact_jid, from_bare, sizeof(b_item.contact_jid) - 1);
-  strncpy(b_item.subscription, "none", sizeof(b_item.subscription) - 1);
+  (void)snprintf(b_item.contact_jid, sizeof(b_item.contact_jid), "%s", from_bare);
+  (void)snprintf(b_item.subscription, sizeof(b_item.subscription), "%s", "none");
 
   if (storage_db_open(&db) == 0) {
     storage_roster_item_t tmp;
@@ -250,7 +251,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     update_subscription(to_bare, from_bare, new_a_roster, 0);
     {
       storage_roster_item_t updated_a = b_item;
-      strncpy(updated_a.subscription, new_a_roster, sizeof(updated_a.subscription) - 1);
+      (void)snprintf(updated_a.subscription, sizeof(updated_a.subscription), "%s", new_a_roster);
       updated_a.ask = 0;
       push_roster_to_bare_jid(to_bare, &updated_a);
     }
@@ -259,7 +260,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     update_subscription(from_bare, to_bare, new_b_roster, 0);
     {
       storage_roster_item_t updated_b = a_item;
-      strncpy(updated_b.subscription, new_b_roster, sizeof(updated_b.subscription) - 1);
+      (void)snprintf(updated_b.subscription, sizeof(updated_b.subscription), "%s", new_b_roster);
       updated_b.ask = 0;
       push_roster_to_bare_jid(from_bare, &updated_b);
     }
@@ -296,7 +297,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     if (new_a_sub != a_sub || a_item.ask) {
       update_subscription(from_bare, to_bare, new_a_sub, 0);
       storage_roster_item_t updated_a = a_item;
-      strncpy(updated_a.subscription, new_a_sub, sizeof(updated_a.subscription) - 1);
+      (void)snprintf(updated_a.subscription, sizeof(updated_a.subscription), "%s", new_a_sub);
       updated_a.ask = 0;
       push_roster_to_bare_jid(from_bare, &updated_a);
     }
@@ -304,7 +305,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     if (new_b_sub != b_sub) {
       update_subscription(to_bare, from_bare, new_b_sub, 0);
       storage_roster_item_t updated_b = b_item;
-      strncpy(updated_b.subscription, new_b_sub, sizeof(updated_b.subscription) - 1);
+      (void)snprintf(updated_b.subscription, sizeof(updated_b.subscription), "%s", new_b_sub);
       updated_b.ask = 0;
       push_roster_to_bare_jid(to_bare, &updated_b);
     }
@@ -345,7 +346,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     if (new_a_roster != b_sub || b_item.ask) {
       update_subscription(to_bare, from_bare, new_a_roster, 0);
       storage_roster_item_t updated_a = b_item;
-      strncpy(updated_a.subscription, new_a_roster, sizeof(updated_a.subscription) - 1);
+      (void)snprintf(updated_a.subscription, sizeof(updated_a.subscription), "%s", new_a_roster);
       updated_a.ask = 0;
       push_roster_to_bare_jid(to_bare, &updated_a);
     }
@@ -353,7 +354,7 @@ static void handle_subscription(xmpp_stanza_t* stanza, const char* type,
     if (new_b_roster != a_sub) {
       update_subscription(from_bare, to_bare, new_b_roster, 0);
       storage_roster_item_t updated_b = a_item;
-      strncpy(updated_b.subscription, new_b_roster, sizeof(updated_b.subscription) - 1);
+      (void)snprintf(updated_b.subscription, sizeof(updated_b.subscription), "%s", new_b_roster);
       updated_b.ask = 0;
       push_roster_to_bare_jid(from_bare, &updated_b);
     }
@@ -404,6 +405,44 @@ static void broadcast_presence(const char* from_bare_jid, const char* from_full_
 /*  Presence stanza handler                                            */
 /* ------------------------------------------------------------------ */
 
+static void handle_directed_presence(xmpp_session_t* ctx, const char* to, const char* type) {
+  size_t len = 0;
+  char* buf = malloc(IQ_BUF_SIZE);
+  if (!buf) return;
+  int rc;
+  if (type) {
+    rc = iq_append(buf, &len, IQ_BUF_SIZE, "<presence from='%s' to='%s' type='%s'/>",
+                   ctx->bound_jid, to, type);
+  } else {
+    rc = iq_append(buf, &len, IQ_BUF_SIZE, "<presence from='%s' to='%s'/>",
+                   ctx->bound_jid, to);
+  }
+  if (rc == 0 && (!strchr(to, '/') || xmpp_session_table_write(to, buf, len) != 0)) {
+    broadcast_to_bare_jid(to, buf, len);
+  }
+  free(buf);
+}
+
+static void handle_initial_presence(xmpp_session_t* ctx, xmpp_stanza_t* stanza,
+                                    const char* bare_jid) {
+  xmpp_session_table_register(ctx, ctx->write_fn, ctx->write_ud);
+
+  /* RFC 6121 §4.7.2.1: parse optional <priority> child. */
+  xmpp_stanza_t* prio_el = xmpp_stanza_get_child_by_name(stanza, "priority");
+  if (prio_el) {
+    char* prio_text = xmpp_stanza_get_text(prio_el);
+    if (prio_text) {
+      int prio = (int)strtol(prio_text, NULL, 10);
+      if (prio < -128) prio = -128;
+      if (prio > 127) prio = 127;
+      xmpp_session_table_update_priority(ctx->bound_jid, prio);
+      free(prio_text);
+    }
+  }
+
+  broadcast_presence(bare_jid, ctx->bound_jid, NULL);
+}
+
 void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   const char* type = xmpp_stanza_get_attribute(stanza, "type");
   const char* to   = xmpp_stanza_get_attribute(stanza, "to");
@@ -422,21 +461,7 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
 
   /* Directed presence: to= attribute is set. RFC 6121 §4.6. */
   if (to && to[0] != '\0') {
-    size_t len = 0;
-    char* buf = malloc(IQ_BUF_SIZE);
-    if (!buf) return;
-    int rc;
-    if (type) {
-      rc = iq_append(buf, &len, IQ_BUF_SIZE, "<presence from='%s' to='%s' type='%s'/>",
-                     ctx->bound_jid, to, type);
-    } else {
-      rc = iq_append(buf, &len, IQ_BUF_SIZE, "<presence from='%s' to='%s'/>",
-                     ctx->bound_jid, to);
-    }
-    if (rc == 0 && xmpp_session_table_write(to, buf, len) != 0) {
-      broadcast_to_bare_jid(to, buf, len);
-    }
-    free(buf);
+    handle_directed_presence(ctx, to, type);
     return;
   }
 
@@ -447,26 +472,9 @@ void xmpp_presence_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     return;
   }
 
-  /* Initial presence (no type, no to): RFC 6121 §4.2.
-   * Register the session now — a client is not considered available until
-   * it sends initial presence, so we defer registration to this point. */
+  /* Initial presence (no type, no to): RFC 6121 §4.2. */
   if (!type || type[0] == '\0') {
-    xmpp_session_table_register(ctx, ctx->write_fn, ctx->write_ud);
-
-    /* RFC 6121 §4.7.2.1: parse optional <priority> child. */
-    xmpp_stanza_t* prio_el = xmpp_stanza_get_child_by_name(stanza, "priority");
-    if (prio_el) {
-      char* prio_text = xmpp_stanza_get_text(prio_el);
-      if (prio_text) {
-        int prio = (int)strtol(prio_text, NULL, 10);
-        if (prio < -128) prio = -128;
-        if (prio > 127) prio = 127;
-        xmpp_session_table_update_priority(ctx->bound_jid, prio);
-        free(prio_text);
-      }
-    }
-
-    broadcast_presence(bare_jid, ctx->bound_jid, NULL);
+    handle_initial_presence(ctx, stanza, bare_jid);
     return;
   }
 

@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake autoconf automake libtool pkg-config clang
+          sudo apt-get install -y build-essential cmake autoconf automake libtool pkg-config clang clang-tidy
 
       - name: Get third-party commit hashes
         id: submodules
@@ -42,3 +42,6 @@ jobs:
 
       - name: Run tests
         run: make test
+
+      - name: Run static analysis
+        run: make tidy

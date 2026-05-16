@@ -20,14 +20,14 @@ int config_set_db_path(const char* path, server_config_t* out) {
     stump_er("db_path must not be empty");
     return -1;
   }
-  snprintf(out->db_path, sizeof(out->db_path), "%s", path);
+  (void)snprintf(out->db_path, sizeof(out->db_path), "%s", path);
   return 0;
 }
 
 int config_set_log_level(const char* level, server_config_t* out) {
   for (int i = 0; LOG_LEVELS[i] != NULL; i++) {
     if (strcasecmp(level, LOG_LEVELS[i]) == 0) {
-      snprintf(out->log_level, sizeof(out->log_level), "%s", LOG_LEVELS[i]);
+      (void)snprintf(out->log_level, sizeof(out->log_level), "%s", LOG_LEVELS[i]);
       return 0;
     }
   }
@@ -40,7 +40,7 @@ int config_set_bind_host(const char* host, server_config_t* out) {
     stump_er("bind_host must not be empty");
     return -1;
   }
-  snprintf(out->bind_host, sizeof(out->bind_host), "%s", host);
+  (void)snprintf(out->bind_host, sizeof(out->bind_host), "%s", host);
   return 0;
 }
 
@@ -55,19 +55,19 @@ int config_set_bind_port(int port, server_config_t* out) {
 
 int config_set_tls_cert_file(const char* path, server_config_t* out) {
   if (!path || path[0] == '\0') {
-    snprintf(out->tls_cert_file, sizeof(out->tls_cert_file), "%s", "");
+    (void)snprintf(out->tls_cert_file, sizeof(out->tls_cert_file), "%s", "");
     return 0;
   }
-  snprintf(out->tls_cert_file, sizeof(out->tls_cert_file), "%s", path);
+  (void)snprintf(out->tls_cert_file, sizeof(out->tls_cert_file), "%s", path);
   return 0;
 }
 
 int config_set_tls_key_file(const char* path, server_config_t* out) {
   if (!path || path[0] == '\0') {
-    snprintf(out->tls_key_file, sizeof(out->tls_key_file), "%s", "");
+    (void)snprintf(out->tls_key_file, sizeof(out->tls_key_file), "%s", "");
     return 0;
   }
-  snprintf(out->tls_key_file, sizeof(out->tls_key_file), "%s", path);
+  (void)snprintf(out->tls_key_file, sizeof(out->tls_key_file), "%s", path);
   return 0;
 }
 
@@ -111,8 +111,8 @@ server_config_t config_parse_default_config(void) {
   config_init(&cfg);
 
   if (!config_read_string(&cfg, DEFAULT_CONFIG_CONTENT)) {
-    fprintf(stderr, "fatal: embedded default config is invalid: line %d - %s\n",
-            config_error_line(&cfg), config_error_text(&cfg));
+    (void)fprintf(stderr, "fatal: embedded default config is invalid: line %d - %s\n",
+                  config_error_line(&cfg), config_error_text(&cfg));
     config_destroy(&cfg);
     exit(1);
   }
@@ -122,7 +122,7 @@ server_config_t config_parse_default_config(void) {
   if (config_parse_cfg(&cfg, &default_server_config) != 0 ||
       default_server_config.db_path[0] == '\0' || default_server_config.log_level[0] == '\0' ||
       default_server_config.bind_host[0] == '\0' || default_server_config.bind_port == 0) {
-    fprintf(stderr, "fatal: embedded default config missing or invalid required fields\n");
+    (void)fprintf(stderr, "fatal: embedded default config missing or invalid required fields\n");
     config_destroy(&cfg);
     exit(1);
   }
@@ -133,7 +133,7 @@ server_config_t config_parse_default_config(void) {
 
 int config_create_default(const char* path) {
   char dir[256];
-  snprintf(dir, sizeof(dir), "%s", path);
+  (void)snprintf(dir, sizeof(dir), "%s", path);
   char* slash = strrchr(dir, '/');
   if (slash) {
     *slash = '\0';
@@ -158,8 +158,8 @@ int config_create_default(const char* path) {
     stump_er("cannot create '%s': %s", path, strerror(errno));
     return -1;
   }
-  fputs(DEFAULT_CONFIG_CONTENT, f);
-  fclose(f);
+  (void)fputs(DEFAULT_CONFIG_CONTENT, f);
+  (void)fclose(f);
   stump_i("created default config: %s", path);
   return 0;
 }
@@ -188,7 +188,7 @@ int config_load(const char* path) {
 void config_print(const char* path, const server_config_t* cfg) {
   char full_path[PATH_MAX];
   if (realpath(path, full_path) == NULL) {
-    snprintf(full_path, sizeof(full_path), "%s", path);
+    (void)snprintf(full_path, sizeof(full_path), "%s", path);
   }
 
   stump_i("config: file=\"%s\" db_path=\"%s\" log_level=\"%s\" bind=\"%s:%d\" "

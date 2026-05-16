@@ -14,12 +14,12 @@
 #define SESSION_TABLE_CAP 256
 
 typedef struct {
-  char bound_jid[3073];
   xmpp_write_fn write_fn;
   void* write_ud;
-  int priority;         /* <presence><priority> value, default 0 */
   uint64_t last_active; /* monotonic nanoseconds; updated on register and activity */
+  int priority;         /* <presence><priority> value, default 0 */
   int carbons_enabled;  /* XEP-0280 carbons opt-in for this resource */
+  char bound_jid[3073];
 } session_entry_t;
 
 session_entry_t g_sessions[SESSION_TABLE_CAP];
@@ -71,7 +71,7 @@ void xmpp_session_table_register(xmpp_session_t* ctx, xmpp_write_fn write_fn, vo
 
   session_entry_t* e = &g_sessions[g_session_count++];
   memset(e, 0, sizeof(*e));
-  strncpy(e->bound_jid, ctx->bound_jid, sizeof(e->bound_jid) - 1);
+  (void)snprintf(e->bound_jid, sizeof(e->bound_jid), "%s", ctx->bound_jid);
   e->write_fn = write_fn;
   e->write_ud = write_ud;
   e->last_active = now;
@@ -104,7 +104,7 @@ int xmpp_session_table_write(const char* bound_jid, const char* data, size_t len
       return g_sessions[i].write_fn(g_sessions[i].write_ud, data, len);
     }
   }
-  stump_er("session: write failed, session not found for '%s'", bound_jid);
+  stump_d("session: write failed, session not found for '%s'", bound_jid);
   return -1;
 }
 
@@ -137,16 +137,14 @@ int xmpp_session_table_best_resource(const char* bare_jid, char* out_full_jid, s
       best = i;
       continue;
     }
-    if (g_sessions[i].priority > g_sessions[best].priority) {
-      best = i;
-    } else if (g_sessions[i].priority == g_sessions[best].priority &&
-               g_sessions[i].last_active > g_sessions[best].last_active) {
+    if (g_sessions[i].priority > g_sessions[best].priority ||
+        (g_sessions[i].priority == g_sessions[best].priority &&
+         g_sessions[i].last_active > g_sessions[best].last_active)) {
       best = i;
     }
   }
   if (best < 0) return -1;
-  strncpy(out_full_jid, g_sessions[best].bound_jid, out_size - 1);
-  out_full_jid[out_size - 1] = '\0';
+  (void)snprintf(out_full_jid, out_size, "%s", g_sessions[best].bound_jid);
   return 0;
 }
 

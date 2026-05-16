@@ -1,8 +1,9 @@
 #ifndef STORAGE_ROSTER_H
 #define STORAGE_ROSTER_H
 
-/* Maximum lengths matching RFC 7622 JID limits. */
-#define ROSTER_JID_MAX 1024
+/* Maximum lengths matching RFC 7622 JID limits.
+ * Bare JID = localpart (1023) + '@' + domain (1023) = 2047 + NUL. */
+#define ROSTER_JID_MAX 2048
 #define ROSTER_NAME_MAX 1024
 
 /* A single roster item returned from the database. */

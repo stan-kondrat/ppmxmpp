@@ -46,7 +46,7 @@ int offline_store(const char* recipient_bare_jid, const char* sender_jid, const 
   }
 
   if (offline_is_capped(recipient_bare_jid)) {
-    stump_w("offline_store: recipient '%s' has reached storage cap", recipient_bare_jid);
+    stump_d("offline_store: recipient '%s' has reached storage cap", recipient_bare_jid);
     return -2;
   }
 

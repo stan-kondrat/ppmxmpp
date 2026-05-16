@@ -19,6 +19,9 @@ void teardown_test_db(void);
 /* Find a substring in the write buffer. Returns pointer into g_write_buf or NULL. */
 const char* buf_contains(const char* needle);
 
+/* Clear the write buffer. Call at the start of each test to prevent state bleed. */
+void reset_write_buf(void);
+
 /* Build and base64-encode a SASL PLAIN message, feed it to ctx, return xmpp_feed rc. */
 int feed_sasl_plain(xmpp_session_t* ctx, const char* authzid, const char* authcid,
                     const char* passwd);

@@ -14,7 +14,7 @@
 
 static int ensure_parent_dir(const char* filepath) {
   char dir[1024];
-  snprintf(dir, sizeof(dir), "%s", filepath);
+  (void)snprintf(dir, sizeof(dir), "%s", filepath);
   char* slash = strrchr(dir, '/');
   if (!slash) {
     return 0;
@@ -44,8 +44,8 @@ static int write_pem_file(const char* path, const char* pem_data) {
     stump_er("cannot create '%s': %s", path, strerror(errno));
     return -1;
   }
-  fputs(pem_data, f);
-  fclose(f);
+  (void)fputs(pem_data, f);
+  (void)fclose(f);
   return 0;
 }
 

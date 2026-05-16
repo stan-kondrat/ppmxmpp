@@ -143,7 +143,7 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
 
   /* RFC 7622 §3.3.1: reject forbidden localpart characters. */
   if (jid_localpart_has_forbidden(authcid)) {
-    stump_er("SASL PLAIN: forbidden character in authcid");
+    stump_d("SASL PLAIN: forbidden character in authcid");
     free(decoded);
     return -2;
   }

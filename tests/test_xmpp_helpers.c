@@ -10,18 +10,15 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "config.h"
+#include "log.h"
+#include "server.h"
 #include "storage/db.h"
 #include "storage/db_users.h"
 #include "test_xmpp_helpers.h"
 #include "xmpp.h"
-#include "xep-0030-service-discovery.h"
-#include "xep-0199-ping.h"
-#include "xep-0280-carbons.h"
-#include "xmpp_iq_dispatch.h"
 
 char g_write_buf[65536];
 size_t g_write_len = 0;
@@ -40,21 +37,28 @@ int setup_test_db(const char** db_path_out) {
   /* Initialize and register handlers once per test process. */
   static int handlers_initialized = 0;
   if (!handlers_initialized) {
-    iq_dispatch_init();
-    xmpp_iq_register_handlers();
-    xep0030_init();
-    xep0199_init();
-    xep0280_init();
+    log_init();
+    log_silence();
+    server_init();
+    storage_db_close();  /* server_init opens DB; we re-open below with test path */
     handlers_initialized = 1;
   }
 
+  const char* tmpdir = getenv("TMPDIR");
+  if (!tmpdir || tmpdir[0] == '\0') tmpdir = P_tmpdir;
+
   char path[512];
-  snprintf(path, sizeof(path), "/tmp/test_xmpp_%d_%d.db", getpid(), (int)time(NULL));
-  unlink(path);
+  snprintf(path, sizeof(path), "%s/test_xmpp_XXXXXX", tmpdir);
+  int fd = mkstemp(path);
+  if (fd < 0) {
+    fprintf(stderr, "setup_test_db: mkstemp failed\n");
+    return -1;
+  }
+  close(fd);
+  unlink(path);  /* SQLite creates the file itself */
 
   extern server_config_t server_config;
-  strncpy(server_config.db_path, path, sizeof(server_config.db_path) - 1);
-  server_config.db_path[sizeof(server_config.db_path) - 1] = '\0';
+  snprintf(server_config.db_path, sizeof(server_config.db_path), "%s", path);
 
   /* Open via the migration system so all schema versions are applied. */
   sqlite3* db;
@@ -88,6 +92,10 @@ void teardown_test_db(void) {
 
 const char* buf_contains(const char* needle) {
   return memmem(g_write_buf, g_write_len, needle, strlen(needle));
+}
+
+void reset_write_buf(void) {
+  g_write_len = 0;
 }
 
 void simulate_starttls(xmpp_session_t* ctx) {

@@ -87,7 +87,7 @@ void iq_handler_unregister(const iq_handler_entry_t* entry) {
     if (!entry) return;
 
     for (int i = 0; i < g_iq_registry.count; i++) {
-        if (g_iq_registry.handlers[i]->ns == entry->ns &&
+        if (strcmp(g_iq_registry.handlers[i]->ns, entry->ns) == 0 &&
             g_iq_registry.handlers[i]->handler == entry->handler) {
             /* Remove by shifting */
             free(g_iq_registry.handlers[i]);
@@ -113,6 +113,27 @@ void iq_dispatch_shutdown(void) {
 /*  Dispatcher                                                        */
 /* ------------------------------------------------------------------ */
 
+static void send_error_iq(xmpp_session_t* ctx, const char* iq_id,
+                          const char* err_type, const char* condition) {
+    char buf[IQ_BUF_SIZE];
+    size_t len = 0;
+    int rc;
+    if (iq_id) {
+        rc = iq_append(buf, &len, sizeof(buf),
+                       "<iq type='error' id='%s'><error type='%s'>"
+                       "<%s xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                       "</error></iq>",
+                       iq_id, err_type, condition);
+    } else {
+        rc = iq_append(buf, &len, sizeof(buf),
+                       "<iq type='error'><error type='%s'>"
+                       "<%s xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
+                       "</error></iq>",
+                       err_type, condition);
+    }
+    if (rc == 0) iq_flush(ctx, buf, len);
+}
+
 /* Extract first element child (skip text nodes). */
 static xmpp_stanza_t* get_first_element_child(xmpp_stanza_t* stanza) {
     xmpp_stanza_t* child = xmpp_stanza_get_children(stanza);
@@ -131,28 +152,22 @@ static int handler_matches(const iq_handler_entry_t* h, const char* ns, const ch
     if (!h->ns || strcmp(h->ns, ns) != 0) {
         return 0;
     }
-    /* If handler specifies a type, it must match. */
-    if (h->type) {
-        /* Support "get|set" syntax for handlers that accept both. */
-        if (strchr(h->type, '|')) {
-            char tmp[32];
-            strncpy(tmp, h->type, sizeof(tmp) - 1);
-            tmp[sizeof(tmp) - 1] = '\0';
-            char* saveptr;
-            char* tok = strtok_r(tmp, "|", &saveptr);
-            int match = 0;
-            while (tok) {
-                if (strcmp(tok, type) == 0) {
-                    match = 1;
-                    break;
-                }
-                tok = strtok_r(NULL, "|", &saveptr);
-            }
-            return match;
-        }
-        return strcmp(h->type, type) == 0;
+    if (!h->type) {
+        return 1;  /* No type restriction */
     }
-    return 1;  /* No type restriction */
+    /* Support "get|set" pipe-separated syntax without strtok: scan for exact
+     * token boundaries so "get" doesn't match "getaway". */
+    const char* p = h->type;
+    size_t tlen = strlen(type);
+    while (*p) {
+        const char* end = strchr(p, '|');
+        size_t seg = end ? (size_t)(end - p) : strlen(p);
+        if (seg == tlen && memcmp(p, type, tlen) == 0) {
+            return 1;
+        }
+        p = end ? end + 1 : p + seg;
+    }
+    return 0;
 }
 
 void iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
@@ -179,24 +194,7 @@ void iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     const char* ns = child ? xmpp_stanza_get_ns(child) : NULL;
 
     if (!ns) {
-        /* No namespace = malformed, send bad-request. */
-        char buf[256];
-        size_t len = 0;
-        if (iq_id) {
-            iq_append(buf, &len, sizeof(buf),
-                      "<iq type='error' id='%s'>"
-                      "<error type='modify'>"
-                      "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                      "</error></iq>",
-                      iq_id);
-        } else {
-            iq_append(buf, &len, sizeof(buf),
-                      "<iq type='error'>"
-                      "<error type='modify'>"
-                      "<bad-request xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                      "</error></iq>");
-        }
-        iq_flush(ctx, buf, len);
+        send_error_iq(ctx, iq_id, "modify", "bad-request");
         return;
     }
 
@@ -205,7 +203,7 @@ void iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
 
     /* Iterate handlers in priority order. */
     for (int i = 0; i < g_iq_registry.count; i++) {
-        iq_handler_entry_t* h = g_iq_registry.handlers[i];
+        const iq_handler_entry_t* h = g_iq_registry.handlers[i];
 
         if (!handler_matches(h, ns, iq_type)) {
             continue;
@@ -232,23 +230,7 @@ void iq_dispatch(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     stump_d("iq_dispatch: no handler for ns='%s' type='%s', returning error",
             ns, iq_type);
 
-    char buf[512];
-    size_t len = 0;
-    if (iq_id) {
-        iq_append(buf, &len, sizeof(buf),
-                  "<iq type='error' id='%s'>"
-                  "<error type='cancel'>"
-                  "<feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>",
-                  iq_id);
-    } else {
-        iq_append(buf, &len, sizeof(buf),
-                  "<iq type='error'>"
-                  "<error type='cancel'>"
-                  "<feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/>"
-                  "</error></iq>");
-    }
-    iq_flush(ctx, buf, len);
+    send_error_iq(ctx, iq_id, "cancel", "feature-not-implemented");
 }
 
 int iq_dispatch_init(void) {

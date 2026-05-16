@@ -320,7 +320,7 @@ third-party: $(THIRDPARTY_STAMPS)
 # ---------------------------------------------------------------------------
 # Main target
 # ---------------------------------------------------------------------------
-.PHONY: all clean distclean test test-e2e format help compile_commands third-party
+.PHONY: all clean distclean test test-e2e format help compile_commands third-party tidy
 
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
@@ -431,7 +431,13 @@ $(COMPILE_COMMANDS_BUILD): $(SRCS) Makefile | $(BUILDDIR)
 	    printf '    "directory": "%s",\n' "$$(pwd)"; \
 	    printf '    "file": "%s/%s",\n' "$$(pwd)" "$$src"; \
 	    printf '    "output": "%s",\n' "$$obj"; \
-	    printf '    "command": "$(CC) $(CFLAGS) -c -o %s %s"\n' "$$obj" "$$src"; \
+	    printf '    "arguments": ['; \
+	    sep=''; \
+	    for arg in $(CC) $(CFLAGS) -c -o "$$obj" "$$src"; do \
+	      printf '%s"%s"' "$$sep" "$$(printf '%s' "$$arg" | sed 's/\\/\\\\/g; s/"/\\"/g')"; \
+	      sep=', '; \
+	    done; \
+	    printf ']\n'; \
 	    printf '  }'; \
 	  done; \
 	  printf '\n]\n'; \
@@ -473,6 +479,13 @@ format:
 	@echo "Formatting source files..."
 	@find $(SRCDIR) $(INCDIR) $(TESTDIR) -name '*.[ch]' | xargs clang-format -i
 
+tidy: compile_commands
+	@echo "Running clang-tidy..."
+	@find $(SRCDIR) -name '*.c' | xargs -I{} clang-tidy \
+	    --checks='-*,clang-analyzer-*,bugprone-*,cert-*,performance-*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,-bugprone-easily-swappable-parameters' \
+	    -p $(BUILDDIR) {} 2>&1
+
+
 help:
 	@echo "Usage: make [TARGET] [OPTIONS]"
 	@echo ""
@@ -491,6 +504,7 @@ help:
 	@echo "  test         Build and run tests"
 	@echo "  test-e2e     Run e2e shell scripts in test_e2e folder"
 	@echo "  format       Format source files with clang-format"
+	@echo "  tidy         Run clang-tidy static analysis"
 	@echo "  compile_commands  Generate compile_commands.json"
 	@echo "  help         Show this help message"
 	@echo ""
