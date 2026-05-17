@@ -89,7 +89,10 @@ LDFLAGS     ?=
 # Project sources
 # ---------------------------------------------------------------------------
 SRCS        := $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/storage/*.c) \
-              $(SRCDIR)/xep-0280-carbons.c
+              $(SRCDIR)/xep-0198-stream-mgmt.c \
+              $(SRCDIR)/xep-0280-carbons.c \
+              $(SRCDIR)/xep-0352-csi.c \
+              $(SRCDIR)/xep-0054-vcard.c
 OBJS        := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 
 # Embed default config as a C string literal, rebuilt when the file changes
@@ -325,7 +328,7 @@ third-party: $(THIRDPARTY_STAMPS)
 TESTDIR     := tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
 TEST_BINS   := $(patsubst $(TESTDIR)/%.c,$(BUILDDIR)/%,$(TEST_SRCS))
-TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message $(BUILDDIR)/test_xmpp_helpers,$(TEST_BINS))
+TEST_BINS   := $(filter-out $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_sasl_scram $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xep-0352-csi $(BUILDDIR)/xep-0245-me-command $(BUILDDIR)/xep-0054-vcard $(BUILDDIR)/xep-0186-blocking $(BUILDDIR)/xep-0184-receipts $(BUILDDIR)/xep-0198-stream-mgmt $(BUILDDIR)/xep-0059-roster-ver $(BUILDDIR)/xep-0333-chat-markers $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message $(BUILDDIR)/test_xmpp_helpers,$(TEST_BINS))
 
 # Objects shared between tests and the main binary (everything except main.o)
 LIB_OBJS    := $(filter-out $(BUILDDIR)/main.o,$(OBJS))
@@ -354,7 +357,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c | $(BUILDDIR)
 $(BUILDDIR)/storage/%.o: $(SRCDIR)/storage/%.c | $(BUILDDIR)/storage
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILDDIR)/%: $(TESTDIR)/%.c $(LIB_OBJS) | $(BUILDDIR)
+$(BUILDDIR)/%: $(TESTDIR)/%.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include -o $@ $^ $(TEST_LDFLAGS)
 
 # Dedicated rule for test_xmpp_sasl (needs libstrophe + its deps)
@@ -364,8 +367,10 @@ XMPP_AUTH_TEST_LDFLAGS := \
     -lexpat -lz -lresolv
 
 $(BUILDDIR)/test_xmpp_sasl: $(TESTDIR)/test_xmpp_sasl.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
-	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
-	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+
+$(BUILDDIR)/test_xmpp_sasl_scram: $(TESTDIR)/test_xmpp_sasl_scram.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
 $(BUILDDIR)/test_xmpp_starttls: $(TESTDIR)/test_xmpp_starttls.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
@@ -388,6 +393,22 @@ $(BUILDDIR)/xep-0199-ping: $(TESTDIR)/xep-0199-ping.c $(TESTDIR)/test_xmpp_helpe
 	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
 $(BUILDDIR)/xep-0280-carbons: $(TESTDIR)/xep-0280-carbons.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+
+
+$(BUILDDIR)/xep-0352-csi: $(TESTDIR)/xep-0352-csi.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+$(BUILDDIR)/xep-0245-me-command: $(TESTDIR)/xep-0245-me-command.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+
+$(BUILDDIR)/xep-0054-vcard: $(TESTDIR)/xep-0054-vcard.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
+	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
+	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
+
+$(BUILDDIR)/xep-0186-blocking: $(TESTDIR)/xep-0186-blocking.c $(TESTDIR)/test_xmpp_helpers.c $(LIB_OBJS) | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(THIRDPARTY)/cmocka/include \
 	    -o $@ $^ $(XMPP_AUTH_TEST_LDFLAGS)
 
@@ -452,9 +473,9 @@ clean:
 distclean: clean
 	rm -f $(SQLITE_STAMP)
 
-test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message
+test: $(THIRDPARTY_STAMPS) $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_sasl_scram $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xep-0352-csi $(BUILDDIR)/xep-0245-me-command $(BUILDDIR)/xep-0054-vcard $(BUILDDIR)/xep-0186-blocking $(BUILDDIR)/xep-0184-receipts $(BUILDDIR)/xep-0198-stream-mgmt $(BUILDDIR)/xep-0059-roster-ver $(BUILDDIR)/xep-0333-chat-markers $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message
 	@total=0; passed=0; failed=0; failed_suites=""; \
-	for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message; do \
+	for t in $(TEST_BINS) $(BUILDDIR)/test_xmpp_sasl $(BUILDDIR)/test_xmpp_starttls $(BUILDDIR)/test_xmpp_state $(BUILDDIR)/test_xmpp_roster $(BUILDDIR)/test_offline $(BUILDDIR)/xep-0030-service-discovery $(BUILDDIR)/xep-0199-ping $(BUILDDIR)/xep-0280-carbons $(BUILDDIR)/xep-0352-csi $(BUILDDIR)/xep-0245-me-command $(BUILDDIR)/xep-0054-vcard $(BUILDDIR)/xep-0186-blocking $(BUILDDIR)/xmpp_presence $(BUILDDIR)/xmpp_message; do \
 		echo "--- $$t ---"; \
 		out=$$($$t 2>&1); echo "$$out"; \
 		t_total=$$(echo "$$out" | grep -oE '[0-9]+ test\(s\) run'  | grep -oE '[0-9]+' | tail -1); \

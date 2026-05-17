@@ -1,4 +1,6 @@
 #include "xmpp.h"
+#include "xep-0198-stream-mgmt.h"
+#include "xep-0352-csi.h"
 #include "xmpp_iq.h"
 #include "xmpp_message.h"
 #include "xmpp_presence.h"
@@ -20,6 +22,17 @@ typedef xmpp_ctx_t strophe_ctx_t;
 
 /* ------------------------------------------------------------------ */
 /*  Forward declarations                                               */
+/* Adapter for SCRAM write callback: xmpp_write_fn returns int, SCRAM expects void */
+typedef struct {
+  xmpp_write_fn fn;
+  void* ud;
+} scram_write_adapter_t;
+
+static void scram_write_adapter(void* vadapter, const char* data, size_t len) {
+  scram_write_adapter_t* adapter = vadapter;
+  (void)adapter->fn(adapter->ud, data, len);  /* return value intentionally ignored */
+}
+
 /* ------------------------------------------------------------------ */
 static int send_stream_features(xmpp_session_t* ctx);
 static int send_stream_close(xmpp_session_t* ctx);
@@ -389,6 +402,7 @@ static int send_stream_features(xmpp_session_t* ctx) {
     if (write_append(ctx, "<stream:features>"
                           "<mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
                           "<mechanism>PLAIN</mechanism>"
+                          "<mechanism>SCRAM-SHA-256</mechanism>"
                           "</mechanisms>"
                           "</stream:features>") != 0) {
       stump_er("send_stream_features: buffer overflow (sasl)");
@@ -398,12 +412,15 @@ static int send_stream_features(xmpp_session_t* ctx) {
 
 
   case XMPP_STATE_STREAM_RESTARTED_POST_SASL:
-    /* RFC 6120 §7: offer resource bind after SASL success and stream restart. */
+    /* RFC 6120 §7 + RFC 6121 §2.6.2: offer bind, CSI, SM, and rosterver after SASL + restart. */
     if (write_append(ctx, "<stream:features>"
                           "<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'>"
                           "<required/></bind>"
+                          "<csi xmlns='urn:xmpp:csi:0'/>"
+                          "<sm xmlns='urn:xmpp:sm:3'/>"
+                          "<ver xmlns='urn:xmpp:features:rosterver'/>"
                           "</stream:features>") != 0) {
-      stump_er("send_stream_features: buffer overflow (bind)");
+      stump_er("send_stream_features: buffer overflow (bind+sm)");
       return -1;
     }
     break;
@@ -643,7 +660,8 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     break;
   }
 
-  case XMPP_STATE_FEATURES_RECEIVED_POST_TLS: {
+  case XMPP_STATE_FEATURES_RECEIVED_POST_TLS:
+  case XMPP_STATE_SASL_NEGOTIATING: {
     /* TLS active — only <auth/> expected. */
     if (strcmp(xmpp_stanza_get_name(stanza), "auth") != 0) {
       stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
@@ -655,10 +673,8 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
     }
 
     const char* mech = xmpp_stanza_get_attribute(stanza, "mechanism");
-    if (!mech || strcmp(mech, "PLAIN") != 0) {
-      /* RFC 6120 §6.3.6: SASL failure is terminal — send <failure> + </stream:stream>. */
-      stump_d("stream sasl-unsupported-mech conn_id='%s' mech=%s", ctx->conn_id,
-              mech ? mech : "(none)");
+    if (!mech) {
+      stump_d("stream sasl-no-mech conn_id='%s'", ctx->conn_id);
       write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
                         "<unsupported-mechanism/></failure>");
       write_append(ctx, "</stream:stream>");
@@ -668,36 +684,119 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
       break;
     }
 
-    stump_d("stream sasl-auth conn_id='%s' mech=%s", ctx->conn_id, mech);
+    /* Handle PLAIN authentication (single-step) */
+    if (strcmp(mech, "PLAIN") == 0) {
+      stump_d("stream sasl-auth conn_id='%s' mech=PLAIN", ctx->conn_id);
 
-    char* b64_text = xmpp_stanza_get_text(stanza);
-    if (!b64_text) {
-      stump_w("stream sasl-empty-credentials conn_id='%s'", ctx->conn_id);
-      ctx->pending_error = 1;
+      char* b64_text = xmpp_stanza_get_text(stanza);
+      if (!b64_text) {
+        stump_w("stream sasl-empty-credentials conn_id='%s'", ctx->conn_id);
+        ctx->pending_error = 1;
+        break;
+      }
+
+      int auth_rc = handle_sasl_plain(ctx, b64_text, ctx->write_fn, ctx->write_ud);
+      free(b64_text);
+
+      if (auth_rc != 0) {
+        write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
+                          "<not-authorized/></failure>");
+        write_flush(ctx, ctx->write_fn, ctx->write_ud);
+        if (auth_rc == -2) {
+          send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
+          ctx->state = XMPP_STATE_CLOSING;
+        } else {
+          ctx->failed_auth_count++;
+          stump_d("stream sasl-failure conn_id='%s' attempt=%d", ctx->conn_id,
+                  ctx->failed_auth_count);
+          if (ctx->failed_auth_count >= 3) {
+            send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn,
+                              ctx->write_ud);
+            ctx->state = XMPP_STATE_CLOSING;
+          } else {
+            ctx->needs_parser_reset = 1;
+            ctx->state = XMPP_STATE_TLS_NEGOTIATED;
+          }
+        }
+        break;
+      }
+
+      stump_d("stream sasl-success conn_id='%s'", ctx->conn_id);
+      write_append(ctx, "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
+      write_flush(ctx, ctx->write_fn, ctx->write_ud);
+      ctx->needs_parser_reset = 1;
+      ctx->state = XMPP_STATE_SASL_SUCCESS;
       break;
     }
 
-    int auth_rc = handle_sasl_plain(ctx, b64_text, ctx->write_fn, ctx->write_ud);
-    free(b64_text);
+    /* Handle SCRAM-SHA-256 (multi-step) */
+    if (strcmp(mech, "SCRAM-SHA-256") == 0) {
+      stump_d("stream sasl-auth conn_id='%s' mech=SCRAM-SHA-256", ctx->conn_id);
 
-    if (auth_rc != 0) {
-      write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
-                        "<not-authorized/></failure>");
-      write_flush(ctx, ctx->write_fn, ctx->write_ud);
-      if (auth_rc == -2) {
-        /* Terminal protocol violation — close immediately. */
-        send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
-        ctx->state = XMPP_STATE_CLOSING;
+      char* b64_text = xmpp_stanza_get_text(stanza);
+      size_t b64_len = b64_text ? strlen(b64_text) : 0;
+
+      /* Decode base64 to get SCRAM message */
+      unsigned char* decoded = NULL;
+      size_t decoded_len = 0;
+      if (b64_text && b64_len > 0) {
+        /* Use mbedtls base64 or our helper */
+        static const char b64_table[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        decoded = malloc(b64_len * 3 / 4 + 4);
+        if (decoded) {
+          int state = 0, val = 0;
+          size_t dl = 0;
+          for (size_t i = 0; i < b64_len; i++) {
+            if (b64_text[i] == '=') continue;
+            const char* c = strchr(b64_table, b64_text[i]);
+            if (!c) continue;
+            val = (val << 6) | (int)(c - b64_table);
+            state++;
+            if (state == 4) {
+              if (dl + 3 > b64_len * 3 / 4 + 3) break;  /* guard */
+              decoded[dl++] = (unsigned char)((val >> 16) & 0xFF);
+              decoded[dl++] = (unsigned char)((val >> 8) & 0xFF);
+              decoded[dl++] = (unsigned char)(val & 0xFF);
+              state = 0; val = 0;
+            }
+          }
+          decoded_len = (size_t)dl;
+        }
+      }
+
+      int step = (ctx->state == XMPP_STATE_SASL_NEGOTIATING) ? 2 : 1;
+      scram_write_adapter_t adapter = {.fn = ctx->write_fn, .ud = ctx->write_ud};
+      int auth_rc = handle_scram_sha256(ctx, step, (char*)decoded, decoded_len,
+                                         NULL, 0, scram_write_adapter, &adapter);
+      free(decoded);
+      free(b64_text);
+
+      if (auth_rc == 0) {
+        /* SCRAM authentication successful */
+        stump_d("stream sasl-success conn_id='%s'", ctx->conn_id);
+        write_append(ctx, "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
+        write_flush(ctx, ctx->write_fn, ctx->write_ud);
+        ctx->needs_parser_reset = 1;
+        ctx->state = XMPP_STATE_SASL_SUCCESS;
+      } else if (auth_rc == 1) {
+        /* Challenge sent, wait for client response */
+        ctx->state = XMPP_STATE_SASL_NEGOTIATING;
+        write_flush(ctx, ctx->write_fn, ctx->write_ud);
       } else {
+        /* auth_rc < 0: authentication failed */
+        write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
+                          "<not-authorized/></failure>");
+        write_flush(ctx, ctx->write_fn, ctx->write_ud);
         ctx->failed_auth_count++;
         stump_d("stream sasl-failure conn_id='%s' attempt=%d", ctx->conn_id,
                 ctx->failed_auth_count);
-        if (ctx->failed_auth_count >= 3) {
-          send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn,
-                            ctx->write_ud);
+        if (ctx->failed_auth_count >= 3 || auth_rc == -2) {
+          if (auth_rc == -2) {
+            send_stream_error(ctx, PPMXMPP_STREAM_ERROR_POLICY_VIOLATION, ctx->write_fn, ctx->write_ud);
+          }
           ctx->state = XMPP_STATE_CLOSING;
         } else {
-          /* Allow client to reopen the stream and retry. */
           ctx->needs_parser_reset = 1;
           ctx->state = XMPP_STATE_TLS_NEGOTIATED;
         }
@@ -705,16 +804,30 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
       break;
     }
 
-    stump_d("stream sasl-success conn_id='%s'", ctx->conn_id);
-    write_append(ctx, "<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'/>");
+    /* Unsupported mechanism */
+    stump_d("stream sasl-unsupported-mech conn_id='%s' mech=%s", ctx->conn_id, mech);
+    write_append(ctx, "<failure xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>"
+                      "<unsupported-mechanism/></failure>");
+    write_append(ctx, "</stream:stream>");
     write_flush(ctx, ctx->write_fn, ctx->write_ud);
-    ctx->needs_parser_reset = 1;
-    ctx->state = XMPP_STATE_SASL_SUCCESS;
+    ctx->state = XMPP_STATE_CLOSED;
+    ctx->pending_error = 1;
     break;
   }
 
   case XMPP_STATE_BOUND: {
-    /* RFC 6120 §7: expect bind IQ after stream restart post-SASL. */
+    /* RFC 6120 §7: expect bind IQ or XEP-0198 SM elements after stream restart.
+     * XEP-0388 §8 allows <enable/> to be inlined with <bind/> in SASL2,
+     * so we accept <enable/> and <resume/> as valid in BOUND state. */
+    {
+      const char* ns = xmpp_stanza_get_ns(stanza);
+      if (ns && strcmp(ns, "urn:xmpp:sm:3") == 0) {
+        /* XEP-0198 SM elements: <enable/> or <resume/> before fully online. */
+        (void)xep0198_handle_element(ctx, stanza, ctx->write_fn, ctx->write_ud);
+        break;
+      }
+    }
+    /* RFC 6120 §7: expect bind IQ. */
     const char* iq_type = xmpp_stanza_get_attribute(stanza, "type");
     if (!iq_type || strcmp(iq_type, "set") != 0) {
       stump_d("stream out-of-order conn_id='%s' state=%s stanza=%s", ctx->conn_id,
@@ -822,6 +935,19 @@ static void on_stanza(xmpp_stanza_t* stanza, void* ud) {
       xmpp_presence_handle(ctx, stanza);
     } else if (strcmp(sname, "message") == 0) {
       xmpp_message_handle(ctx, stanza);
+    } else {
+      /* XEP-0352 §4.2: bare <active/> or <inactive/> stanzas in urn:xmpp:csi:0 ns. */
+      if (xep0352_handle_stanza(ctx, stanza) == 0) {
+        break;
+      }
+      /* XEP-0198 §4/§5: SM top-level elements: <r/>, <a/>, <resume/>. */
+      {
+        const char* ns = xmpp_stanza_get_ns(stanza);
+        if (ns && strcmp(ns, "urn:xmpp:sm:3") == 0) {
+          (void)xep0198_handle_element(ctx, stanza, ctx->write_fn, ctx->write_ud);
+          break;
+        }
+      }
     }
     break;
   }
@@ -862,8 +988,10 @@ void xmpp_session_cleanup(xmpp_session_t* ctx) {
 }
 
 void xmpp_session_reset(xmpp_session_t* ctx) {
+  /* Free any existing parser/strophe_ctx before zeroing the struct. */
   xmpp_session_cleanup(ctx);
   memset(ctx, 0, sizeof(*ctx));
+  ctx->csi_state = XMPP_CSI_ACTIVE;
   ctx->state = XMPP_STATE_CONNECTED_TCP;
 
   /* RFC 6120 §4.7.3: stream ID MUST be unique and unpredictable. */

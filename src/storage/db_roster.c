@@ -1,5 +1,6 @@
 #include "storage/db_roster.h"
 #include "storage/db.h"
+#include "xep-0059-roster-ver.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -222,6 +223,9 @@ int storage_roster_upsert(const char* owner_jid, const storage_roster_item_t* it
     }
   }
 
+  /* XEP-0059: bump version on any roster change. */
+  roster_ver_increment(owner_jid);
+
   return 0;
 }
 
@@ -254,6 +258,10 @@ int storage_roster_remove(const char* owner_jid, const char* contact_jid) {
     stump_er("roster remove failed for '%s'/'%s': %s", owner_jid, contact_jid, sqlite3_errmsg(db));
     return -1;
   }
+
+  /* XEP-0059: bump version on any roster change. */
+  roster_ver_increment(owner_jid);
+
   return 0;
 }
 

@@ -85,6 +85,7 @@ static void test_server_start_success(void** state) {
   uv_loop_init(&loop);
   assert_int_equal(server_start(&loop), 0);
   drain_loop(&loop);
+  server_tls_cleanup();
 }
 
 /* server_start() with a non-IP host string should return -1 (uv_ip4_addr
@@ -96,6 +97,7 @@ static void test_server_start_invalid_host(void** state) {
   uv_loop_init(&loop);
   assert_int_equal(server_start(&loop), -1);
   drain_loop(&loop);
+  server_tls_cleanup();
 }
 
 /* server_start() when the port is already in use should return -1. */
@@ -118,6 +120,7 @@ static void test_server_start_port_in_use(void** state) {
   uv_loop_init(&loop);
   assert_int_equal(server_start(&loop), -1);
   drain_loop(&loop);
+  server_tls_cleanup();
   close(fd);
 }
 

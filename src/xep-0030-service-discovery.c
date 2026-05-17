@@ -17,14 +17,20 @@
 #include "log.h"
 #include "xmpp_iq_buf.h"
 #include "xmpp_iq_dispatch.h"
+#include "xep-0245-me-command.h"
 
 static const char* server_features[] = {
     "urn:xmpp:ping",
     "urn:xmpp:carbons:2",
     "urn:xmpp:forward:0",
+    "urn:xmpp:receipts",
+    "urn:xmpp:chat-markers:0",
+    "urn:xmpp:features:rosterver",
     "http://jabber.org/protocol/disco#info",
     "http://jabber.org/protocol/disco#items",
     "jabber:iq:roster",
+    "vcard-temp",
+    XEP_0245_ME_COMMAND_NS,
     NULL,
 };
 

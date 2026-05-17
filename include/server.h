@@ -14,4 +14,8 @@ int server_init(void);
 /* Tear down all subsystems initialized by server_init(). */
 void server_shutdown(void);
 
+/* Free the global TLS context if it was initialized by server_start().
+ * Call after draining the event loop to avoid leaking mbedTLS resources. */
+void server_tls_cleanup(void);
+
 #endif /* SERVER_H */

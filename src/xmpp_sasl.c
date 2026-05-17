@@ -5,7 +5,23 @@
 #include <string.h>
 
 #include "storage/db.h"
+#include "xmpp_sasl_scram.h"
 #include "log.h"
+
+/* ------------------------------------------------------------------ */
+/*  Available SASL mechanisms                                         */
+/* ------------------------------------------------------------------ */
+
+static const char s_sasl_mechanisms[] = "PLAIN SCRAM-SHA-256";
+
+const char* sasl_available_mechanisms(void) {
+  return s_sasl_mechanisms;
+}
+
+
+int sasl_is_multi_step_mechanism(const char* mechanism) {
+  return strcmp(mechanism, "SCRAM-SHA-256") == 0;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Base64 decode (libstrophe's b64 helper is not exported)           */
@@ -233,3 +249,16 @@ sasl_rc_t handle_sasl_plain(xmpp_session_t* ctx, const char* b64_text, xmpp_writ
   storage_db_close();
   return 0;
 }
+
+/* ------------------------------------------------------------------ */
+/*  SASL SCRAM-SHA-256 entry point                                     */
+/* ------------------------------------------------------------------ */
+
+/* handle_scram_sha256 is defined in xmpp_sasl_scram.c (8-arg form, response_out/response_cap unused) */
+extern int handle_scram_sha256(xmpp_session_t* ctx, int step, const char* input, size_t in_len,
+                        char* response_out, size_t response_cap,
+                        void (*write_fn)(void*, const char*, size_t), void* ud);
+
+/* Wrapper: calls handle_scram_sha256 with NULL response buffer (server sends via write_fn). */
+extern int handle_scram_sha256_write(xmpp_session_t* ctx, int step, const char* input, size_t in_len,
+                        void (*write_fn)(void*, const char*, size_t), void* ud);

@@ -6,7 +6,9 @@
 
 #include "strophe.h"
 #include "log.h"
+#include "storage/db_blocklist.h"
 #include "xep-0160-offline-messages.h"
+#include "xep-0184-receipts.h"
 #include "xep-0280-carbons.h"
 #include "xmpp_iq_buf.h"
 #include "xmpp_session.h"
@@ -239,6 +241,7 @@ static void send_message_error(xmpp_session_t* ctx, const char* to_attr, const c
 /* ------------------------------------------------------------------ */
 
 void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
+  const char* from_attr = xmpp_stanza_get_attribute(stanza, "from");
   const char* to_attr  = xmpp_stanza_get_attribute(stanza, "to");
   const char* msg_type = xmpp_stanza_get_attribute(stanza, "type");
   const char* msg_id   = xmpp_stanza_get_attribute(stanza, "id");
@@ -265,6 +268,19 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   /* Check XEP-0280 §9: <private xmlns='urn:xmpp:carbons:2'/> → exclude from carbons. */
   int is_private = msg_has_private(stanza);
 
+  /* Check XEP-0184 §1: <received/> or <displayed/> ack stanzas → exclude from carbons
+   * (ack stanzas are responses, not user content). */
+  int is_receipt_ack = xep0184_has_received(stanza) || xep0184_has_displayed(stanza);
+
+  /* XEP-0184 §1: if content message has <request xmlns='urn:xmpp:receipts'/>,
+   * send back a <received id='orig_id'/> receipt immediately.
+   * Skip for ack stanzas (already filtered above) and error messages. */
+  if (!is_receipt_ack && (!msg_type || (strcmp(msg_type, "error") != 0)) &&
+      xep0184_has_request(stanza) && msg_id && msg_id[0] && from_attr) {
+    stump_d("xep0184: incoming message has <request/>, sending receipt id=%s", msg_id);
+    xep0184_send_receipt(ctx, ctx->bound_jid, from_attr, msg_id);
+  }
+
   /* Extract <body> text (allocated by libstrophe — must free). */
   xmpp_stanza_t* body_el = xmpp_stanza_get_child_by_name(stanza, "body");
   char* body_text = body_el ? xmpp_stanza_get_text(body_el) : NULL;
@@ -272,6 +288,17 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
   char to_bare[JID_BUF_SIZE];
   msg_bare_jid(to_attr, to_bare, sizeof(to_bare));
   const char* to_resource = msg_resource(to_attr);
+
+  /* XEP-0186 §3: if the recipient has blocked the sender, silently drop. */
+  {
+    char sender_bare[JID_BUF_SIZE];
+    msg_bare_jid(ctx->bound_jid, sender_bare, sizeof(sender_bare));
+    if (storage_blocklist_check(sender_bare, to_bare) == 1) {
+      stump_d("message: %s blocked by %s, dropping", sender_bare, to_bare);
+      free(body_text);
+      return;
+    }
+  }
 
   char fwd[IQ_BUF_SIZE];
   size_t fwd_len = 0;
@@ -285,7 +312,7 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
         /* RFC 6121 delivered to the target full JID resource.
          * Carbons: send <received/> copies to all OTHER carbons-enabled
          * resources of the recipient (to_bare). */
-        if (!is_private) {
+        if (!is_private && !is_receipt_ack) {
           send_carbon_received(to_bare, to_attr, ctx->bound_jid, to_attr,
                                msg_type, msg_id, body_text);
         }
@@ -310,7 +337,7 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
                       body_text) == 0) {
       xmpp_session_table_broadcast_except(sender_bare, ctx->bound_jid, fwd, fwd_len);
       xmpp_session_table_touch(ctx->bound_jid);
-      if (!is_private) {
+      if (!is_private && !is_receipt_ack) {
         send_carbon_sent(sender_bare, ctx->bound_jid, ctx->bound_jid, to_bare,
                          msg_type, msg_id, body_text);
       }
@@ -321,12 +348,12 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
     if (xmpp_session_table_best_resource(to_bare, best_jid, sizeof(best_jid)) == 0) {
       if (build_message(fwd, &fwd_len, sizeof(fwd), ctx->bound_jid, best_jid, msg_type, msg_id,
                         body_text) == 0) {
-        xmpp_session_table_write(best_jid, fwd, fwd_len);
+        int wr = xmpp_session_table_write(best_jid, fwd, fwd_len);
         xmpp_session_table_touch(ctx->bound_jid);
         /* RFC 6121 delivered to best_jid.
          * Carbons: send <sent/> to all OTHER carbons-enabled resources of sender,
          * and <received/> to all OTHER carbons-enabled resources of recipient. */
-        if (!is_private) {
+        if (wr == 0 && !is_private && !is_receipt_ack) {
           send_carbon_sent(sender_bare, ctx->bound_jid, ctx->bound_jid, to_attr,
                            msg_type, msg_id, body_text);
           send_carbon_received(to_bare, best_jid, ctx->bound_jid, to_attr,
@@ -342,7 +369,7 @@ void xmpp_message_handle(xmpp_session_t* ctx, xmpp_stanza_t* stanza) {
                         body_text) == 0) {
         xep0160_store(ctx, to_bare, msg_id, fwd, fwd_len);
         xmpp_session_table_touch(ctx->bound_jid);
-        if (!is_private) {
+        if (!is_private && !is_receipt_ack) {
           send_carbon_sent(sender_bare, ctx->bound_jid, ctx->bound_jid, to_bare,
                            msg_type, msg_id, body_text);
         }

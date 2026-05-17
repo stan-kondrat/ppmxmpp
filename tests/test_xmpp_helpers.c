@@ -82,6 +82,8 @@ int setup_test_db(const char** db_path_out) {
   (void)storage_users_create("testuser@example.com", "testpass");
   /* Seed bob@localhost used by carbons and message routing tests. */
   (void)storage_users_create("bob@localhost", "testpass");
+  /* Seed alice@localhost used by XEP-0245 and other message routing tests. */
+  (void)storage_users_create("alice@localhost", "testpass");
 
   storage_db_close();
 
@@ -90,9 +92,16 @@ int setup_test_db(const char** db_path_out) {
 }
 
 void teardown_test_db(void) {
-  storage_db_close();
+  /* Capture path before clearing server_config.db_path, then delete the
+   * file so the next setup_test_db starts with a truly empty database. */
   extern server_config_t server_config;
+  char path[sizeof(server_config.db_path)];
+  (void)snprintf(path, sizeof(path), "%s", server_config.db_path);
+  storage_db_close();
   server_config.db_path[0] = '\0';
+  if (path[0] != '\0') {
+    (void)unlink(path);
+  }
 }
 
 const char* buf_contains(const char* needle) {
@@ -108,7 +117,7 @@ void simulate_starttls(xmpp_session_t* ctx) {
   ctx->needs_parser_reset = 1;
 }
 
-int feed_to_online(xmpp_session_t* ctx) {
+int feed_to_online_as(xmpp_session_t* ctx, const char* username, const char* passwd) {
   memset(ctx, 0, sizeof(*ctx));
   xmpp_session_reset(ctx);
   g_write_len = 0;
@@ -132,7 +141,7 @@ int feed_to_online(xmpp_session_t* ctx) {
   if (xmpp_feed(ctx, r1, strlen(r1), mock_write, NULL) != 0) return -1;
   if (ctx->state != XMPP_STATE_FEATURES_RECEIVED_POST_TLS) return -1;
 
-  if (feed_sasl_plain(ctx, "", "testuser", "testpass") != 0) return -1;
+  if (feed_sasl_plain(ctx, "", username, passwd) != 0) return -1;
   if (ctx->state != XMPP_STATE_SASL_SUCCESS) return -1;
 
   g_write_len = 0;
@@ -150,6 +159,10 @@ int feed_to_online(xmpp_session_t* ctx) {
 
   g_write_len = 0;
   return 0;
+}
+
+int feed_to_online(xmpp_session_t* ctx) {
+  return feed_to_online_as(ctx, "testuser", "testpass");
 }
 
 int feed_sasl_plain(xmpp_session_t* ctx, const char* authzid, const char* authcid,

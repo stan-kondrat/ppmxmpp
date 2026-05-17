@@ -4,7 +4,7 @@
 #include <sqlite3.h>
 #include <stddef.h>
 
-#define STORAGE_MAX_VERSION 3
+#define STORAGE_MAX_VERSION 9
 
 /* Prepared statement handle for the cache. */
 typedef struct {
@@ -54,5 +54,9 @@ char* storage_db_column_text_copy(storage_stmt_t* stmt, int col);
 
 /* Return the number of rows changed by the last statement. */
 int storage_db_changes(sqlite3* db);
+
+/* Execute a raw SQL string (no result rows returned).
+ * Returns 0 on success, negative on error. */
+int storage_db_exec(sqlite3* db, const char* sql);
 
 #endif /* STORAGE_DB_H */

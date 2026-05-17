@@ -5,6 +5,11 @@
 #define JID_BUF_SIZE 3073
 
 #include <stddef.h>
+#include <stdint.h>
+
+/* scram_state_t must be defined before xmpp_session_t uses it.
+ * It's defined in xmpp_sasl_scram.h. */
+#include "xmpp_sasl_scram.h"
 
 /* XMPP stream negotiation states (RFC 6120). */
 typedef enum {
@@ -61,7 +66,7 @@ typedef void (*ppmxmpp_stream_error_fn)(ppmxmpp_stream_error_t error, void* ud);
 #define XMPP_BUF_SIZE 8192
 
 /* Per-connection XMPP session state. */
-typedef struct {
+typedef struct xmpp_session {
   xmpp_state_t state;
   char conn_id[33];              /* connection ID for logging (hex, null-terminated) */
   char domain[1024];             /* extracted from to='' in <stream:stream> — RFC 7622 §3.2:
@@ -88,6 +93,17 @@ typedef struct {
   char client_ns[256]; /* default namespace from xmlns='' in <stream:stream> */
   char stream_ns[256]; /* stream namespace from xmlns:stream='' in <stream:stream> */
   int carbons_enabled; /* XEP-0280: set by IQ enable before presence registration */
+  int csi_state;         /* XEP-0352: XMPP_CSI_ACTIVE (0) or XMPP_CSI_INACTIVE (1) */
+
+  /* XEP-0198 Stream Management (pure connection-layer, no storage deps). */
+  int sm_enabled;    /* SM session is active (after <enabled/> sent/received) */
+  int sm_resumable;  /* server issued a resumable SM-ID */
+  uint32_t sm_outbound;  /* outbound stanza counter since <enabled/> */
+  uint32_t sm_handled;  /* inbound handled stanza counter since <enabled/> */
+  char sm_id[65];    /* SM-ID for session resumption (HMAC-SHA256, hex, up to 64 chars) */
+
+  /* SCRAM-SHA-256 state (RFC 5802 / RFC 7677).  Defined in xmpp_sasl_scram.h. */
+  scram_state_t scram;
 } xmpp_session_t;
 
 /* Feed received bytes into the XMPP state machine.

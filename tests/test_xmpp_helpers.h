@@ -34,4 +34,8 @@ void simulate_starttls(xmpp_session_t* ctx);
  * Requires setup_test_db() to have been called first. Returns 0 on success, -1 on failure. */
 int feed_to_online(xmpp_session_t* ctx);
 
+/* Same as feed_to_online but authenticates as the given user/password.
+ * The user must already exist in the test database. */
+int feed_to_online_as(xmpp_session_t* ctx, const char* username, const char* passwd);
+
 #endif /* TEST_XMPP_HELPERS_H */

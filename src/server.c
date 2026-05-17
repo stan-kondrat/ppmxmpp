@@ -15,6 +15,9 @@
 #include "storage/db.h"
 #include "tls.h"
 #include "xep-0030-service-discovery.h"
+#include "xep-0054-vcard.h"
+#include "xep-0184-receipts.h"
+#include "xep-0186-blocking.h"
 #include "xep-0199-ping.h"
 #include "xep-0280-carbons.h"
 #include "xmpp.h"
@@ -459,7 +462,7 @@ int server_start(uv_loop_t* loop) {
   if (r != 0) {
     stump_er("invalid listen address %s:%d: %s", server_config.bind_host, server_config.bind_port,
              uv_strerror(r));
-    return -1;
+    goto fail_tls;
   }
 
   uv_tcp_init(loop, &g_server);
@@ -470,14 +473,14 @@ int server_start(uv_loop_t* loop) {
     stump_er("uv_tcp_bind %s:%d: %s", server_config.bind_host, server_config.bind_port,
              uv_strerror(r));
     uv_close((uv_handle_t*)&g_server, NULL);
-    return -1;
+    goto fail_tls;
   }
 
   r = uv_listen((uv_stream_t*)&g_server, 128, on_new_connection);
   if (r != 0) {
     stump_er("uv_listen: %s", uv_strerror(r));
     uv_close((uv_handle_t*)&g_server, NULL);
-    return -1;
+    goto fail_tls;
   }
 
   stump_i("listening on %s:%d%s", server_config.bind_host, server_config.bind_port,
@@ -490,6 +493,20 @@ int server_start(uv_loop_t* loop) {
   uv_signal_start(&g_sigterm, on_signal, SIGTERM);
 
   return 0;
+
+fail_tls:
+  if (g_tls_ctx_ready) {
+    tls_server_ctx_free(&g_tls_ctx);
+    g_tls_ctx_ready = 0;
+  }
+  return -1;
+}
+
+void server_tls_cleanup(void) {
+  if (g_tls_ctx_ready) {
+    tls_server_ctx_free(&g_tls_ctx);
+    g_tls_ctx_ready = 0;
+  }
 }
 
 int server_init(void) {
@@ -519,6 +536,24 @@ int server_init(void) {
   }
   if (xep0280_init() != 0) {
     stump_er("server_init: xep0280_init failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  if (xep0184_init() != 0) {
+    stump_er("server_init: xep0184_init failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  if (xep0054_init() != 0) {
+    stump_er("server_init: xep0054_init failed");
+    iq_dispatch_shutdown();
+    log_free();
+    return -1;
+  }
+  if (xep0186_init() != 0) {
+    stump_er("server_init: xep0186_init failed");
     iq_dispatch_shutdown();
     log_free();
     return -1;

@@ -18,17 +18,24 @@ static storage_stmt_t g_stmts[MAX_STMTS];
 static int g_stmt_count = 0;
 
 /* Migration SQL for each version. Each entry is applied inside a transaction.
+ * sqlite3_exec() runs one SQL statement per call, so each entry is exactly one statement.
+ * CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS handles existing databases.
+ * Version 1 = all schema tables.
  */
 static const char* MIGRATIONS[] = {
-    /* Version 1: create users table */
+    /* Migration 1: users table (includes SCRAM columns) */
     "CREATE TABLE IF NOT EXISTS users (\n"
-    "    jid           TEXT PRIMARY KEY,\n"
-    "    password_plain TEXT NOT NULL,\n"
-    "    created_at    INTEGER NOT NULL,\n"
-    "    disabled      INTEGER NOT NULL DEFAULT 0\n"
+    "    jid                   TEXT PRIMARY KEY,\n"
+    "    password_plain        TEXT NOT NULL,\n"
+    "    created_at            INTEGER NOT NULL,\n"
+    "    disabled              INTEGER NOT NULL DEFAULT 0,\n"
+    "    scram_salt_base64     TEXT,\n"
+    "    scram_stored_key_base64 TEXT,\n"
+    "    scram_server_key_base64 TEXT,\n"
+    "    scram_iteration_count INTEGER NOT NULL DEFAULT 4096\n"
     ")\n",
 
-    /* Version 2: roster tables (RFC 6121 §2) */
+    /* Migration 2: roster table */
     "CREATE TABLE IF NOT EXISTS roster (\n"
     "    owner_jid     TEXT NOT NULL,\n"
     "    contact_jid   TEXT NOT NULL,\n"
@@ -36,7 +43,9 @@ static const char* MIGRATIONS[] = {
     "    subscription  TEXT NOT NULL DEFAULT 'none',\n"
     "    ask           INTEGER NOT NULL DEFAULT 0,\n"
     "    PRIMARY KEY (owner_jid, contact_jid)\n"
-    ");\n"
+    ")\n",
+
+    /* Migration 3: roster_groups table */
     "CREATE TABLE IF NOT EXISTS roster_groups (\n"
     "    owner_jid     TEXT NOT NULL,\n"
     "    contact_jid   TEXT NOT NULL,\n"
@@ -46,7 +55,7 @@ static const char* MIGRATIONS[] = {
     "        REFERENCES roster(owner_jid, contact_jid) ON DELETE CASCADE\n"
     ")\n",
 
-    /* Version 3: offline messages (XEP-0160, XEP-0203) */
+    /* Migration 4: offline_messages table */
     "CREATE TABLE IF NOT EXISTS offline_messages (\n"
     "    id              INTEGER PRIMARY KEY AUTOINCREMENT,\n"
     "    recipient_jid  TEXT NOT NULL,\n"
@@ -55,7 +64,32 @@ static const char* MIGRATIONS[] = {
     "    received_at    INTEGER NOT NULL,\n"
     "    bytes_size     INTEGER NOT NULL DEFAULT 0\n"
     ")\n",
+
+    /* Migration 5: offline_messages index */
     "CREATE INDEX IF NOT EXISTS idx_offline_recipient ON offline_messages(recipient_jid, received_at)\n",
+
+    /* Migration 6: roster_ver table (XEP-0059) */
+    "CREATE TABLE IF NOT EXISTS roster_ver (\n"
+    "    owner_jid    TEXT PRIMARY KEY,\n"
+    "    ver          TEXT NOT NULL\n"
+    ")\n",
+
+    /* Migration 7: vcards table (XEP-0054) */
+    "CREATE TABLE IF NOT EXISTS vcards (\n"
+    "    jid          TEXT PRIMARY KEY,\n"
+    "    vcard_xml    TEXT NOT NULL\n"
+    ")\n",
+
+    /* Migration 8: blocklist table (XEP-0186) */
+    "CREATE TABLE IF NOT EXISTS blocklist (\n"
+    "    owner_jid     TEXT NOT NULL,\n"
+    "    blocked_jid  TEXT NOT NULL,\n"
+    "    blocked_at   INTEGER NOT NULL DEFAULT 0,\n"
+    "    PRIMARY KEY (owner_jid, blocked_jid)\n"
+    ")\n",
+
+    /* Migration 9: blocklist index */
+    "CREATE INDEX IF NOT EXISTS idx_blocklist_owner ON blocklist(owner_jid)\n",
 };
 
 static int ensure_directory(const char* path) {
@@ -318,3 +352,15 @@ char* storage_db_column_text_copy(storage_stmt_t* stmt, int col) {
 }
 
 int storage_db_changes(sqlite3* db) { return sqlite3_changes(db); }
+
+int storage_db_exec(sqlite3* db, const char* sql) {
+  if (!db || !sql) {
+    return -1;
+  }
+  int rc = sqlite3_exec(db, sql, NULL, NULL, NULL);
+  if (rc != SQLITE_OK) {
+    stump_er("storage_db_exec failed: %s", sqlite3_errmsg(db));
+    return -1;
+  }
+  return 0;
+}

@@ -7,6 +7,7 @@
 #include "strophe.h"
 #include "log.h"
 #include "xmpp_iq_buf.h"
+#include "xep-0059-roster-ver.h"
 
 /* ------------------------------------------------------------------ */
 /*  Error response helper                                             */
@@ -117,11 +118,46 @@ static int roster_list_cb(const storage_roster_item_t* item, const char** groups
 static iq_handler_result_t xmpp_iq_handle_roster_get(xmpp_session_t* ctx, xmpp_stanza_t* stanza,
                                               xmpp_stanza_t* child, const char* iq_id) {
   (void)stanza;
-  (void)child;
+
+  /* XEP-0059 §2.3: read optional ver= from incoming <query ver='...'>. */
+  const char* req_ver = xmpp_stanza_get_attribute(child, "ver");
 
   /* Derive owner bare JID from authcid and domain. */
   char owner[2048];
   (void)snprintf(owner, sizeof(owner), "%s@%s", ctx->authcid, ctx->domain);
+
+  /* XEP-0059 §2.4: if client sent a version, check for a match. */
+  if (req_ver && req_ver[0]) {
+    char stored_ver[ROSTER_VER_SIZE];
+    int vr = roster_ver_get(owner, stored_ver);
+    if (vr == 0 && strcmp(req_ver, stored_ver) == 0) {
+      /* XEP-0059 §2.4: roster unchanged — return 304 / empty result with ver=. */
+      char rbuf[512];
+      size_t rlen = 0;
+      if (iq_id) {
+        (void)iq_append(rbuf, &rlen, sizeof(rbuf),
+                       "<iq type='result' id='%s'>"
+                       "<query xmlns='jabber:iq:roster' ver='%s'/>"
+                       "</iq>",
+                       iq_id, stored_ver);
+      } else {
+        (void)iq_append(rbuf, &rlen, sizeof(rbuf),
+                       "<iq type='result'>"
+                       "<query xmlns='jabber:iq:roster' ver='%s'/>"
+                       "</iq>",
+                       stored_ver);
+      }
+      iq_flush(ctx, rbuf, rlen);
+      stump_d("roster get (ver=%s) unchanged for %s", req_ver, owner);
+      return IQ_HANDLED;
+    }
+    /* vr == 1 (no version yet) or mismatch → fall through to send full roster. */
+  }
+
+  /* Fetch current version (will be computed if first-ever request). */
+  char cur_ver[ROSTER_VER_SIZE];
+  (void)roster_ver_peek(owner, cur_ver);
+  cur_ver[0] = '\0'; /* safe default if peek fails */
 
   char* buf = (char*)malloc(IQ_BUF_SIZE);
   if (!buf) {
@@ -133,15 +169,25 @@ static iq_handler_result_t xmpp_iq_handle_roster_get(xmpp_session_t* ctx, xmpp_s
   if (iq_id) {
     if (iq_append(buf, &len, IQ_BUF_SIZE,
                   "<iq type='result' id='%s'>"
-                  "<query xmlns='jabber:iq:roster'>",
-                  iq_id) != 0) {
-      goto overflow;
+                  "<query xmlns='jabber:iq:roster'%s%s%s>"
+                  "</iq>",
+                  iq_id,
+                  cur_ver[0] ? " ver='" : "",
+                  cur_ver[0] ? cur_ver : "",
+                  cur_ver[0] ? "'" : "") != 0) {
+      free(buf);
+      return IQ_ERROR;
     }
   } else {
     if (iq_append(buf, &len, IQ_BUF_SIZE,
                   "<iq type='result'>"
-                  "<query xmlns='jabber:iq:roster'>") != 0) {
-      goto overflow;
+                  "<query xmlns='jabber:iq:roster'%s%s%s>"
+                  "</iq>",
+                  cur_ver[0] ? " ver='" : "",
+                  cur_ver[0] ? cur_ver : "",
+                  cur_ver[0] ? "'" : "") != 0) {
+      free(buf);
+      return IQ_ERROR;
     }
   }
 
@@ -171,29 +217,36 @@ static iq_handler_result_t xmpp_iq_handle_roster_get(xmpp_session_t* ctx, xmpp_s
 
   len = rx.len;
   if (iq_append(buf, &len, IQ_BUF_SIZE, "</query></iq>") != 0) {
-    goto overflow;
+    stump_er("roster get: buffer overflow for '%s'", owner);
+    free(buf);
+    return IQ_ERROR;
   }
 
   stump_d("roster get owner=%s iq_id=%s", owner, iq_id ? iq_id : "(none)");
   iq_flush(ctx, buf, len);
   free(buf);
   return IQ_HANDLED;
-
-overflow:
-  stump_er("roster get: response buffer overflow for '%s'", owner);
-  free(buf);
-  return IQ_ERROR;
 }
 
 /* Handle jabber:iq:roster set (add/update/remove). */
 static void send_roster_push(xmpp_session_t* ctx, const storage_roster_item_t* item,
-                             const char** groups, int gc, const char* push_id) {
+                             const char** groups, int gc, const char* push_id,
+                             const char* owner) {
   char buf[4096];
   size_t len = 0;
+
+  /* XEP-0059 §2.2: include ver= attribute on every roster push. */
+  char ver[ROSTER_VER_SIZE];
+  ver[0] = '\0';
+  (void)roster_ver_peek(owner, ver);
+
   if (iq_append(buf, &len, sizeof(buf),
                 "<iq type='set' id='%s'>"
-                "<query xmlns='jabber:iq:roster'>",
-                push_id) != 0) {
+                "<query xmlns='jabber:iq:roster'%s%s%s>",
+                push_id,
+                ver[0] ? " ver='" : "",
+                ver[0] ? ver : "",
+                ver[0] ? "'" : "") != 0) {
     return;
   }
   roster_xml_ctx_t rx = {buf, len, sizeof(buf), 0};
@@ -252,7 +305,7 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
     memset(&push_item, 0, sizeof(push_item));
     (void)snprintf(push_item.contact_jid, sizeof(push_item.contact_jid), "%s", contact_jid);
     (void)snprintf(push_item.subscription, sizeof(push_item.subscription), "%s", "remove");
-    send_roster_push(ctx, &push_item, NULL, 0, push_id);
+    send_roster_push(ctx, &push_item, NULL, 0, push_id, owner);
 
     stump_d("roster remove owner=%s contact=%s", owner, contact_jid);
     return IQ_HANDLED;
@@ -298,7 +351,7 @@ static iq_handler_result_t xmpp_iq_handle_roster_set(xmpp_session_t* ctx, xmpp_s
 
   char push_id[32];
   (void)snprintf(push_id, sizeof(push_id), "push-%s", iq_id ? iq_id : "r");
-  send_roster_push(ctx, &item, groups, gc, push_id);
+  send_roster_push(ctx, &item, groups, gc, push_id, owner);
 
   for (int i = 0; i < gc; i++) {
     free(group_allocs[i]);
