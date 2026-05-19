@@ -977,14 +977,19 @@ static void reset_parser(xmpp_session_t* ctx) {
 }
 
 void xmpp_session_cleanup(xmpp_session_t* ctx) {
+  fprintf(stderr, "[DEBUG] xmpp_session_cleanup: parser=%p strophe_ctx=%p\n",
+          ctx->parser, ctx->strophe_ctx);
   if (ctx->parser != NULL) {
+    fprintf(stderr, "[DEBUG] calling parser_free(%p)\n", ctx->parser);
     parser_free((parser_t*)ctx->parser);
     ctx->parser = NULL;
   }
   if (ctx->strophe_ctx != NULL) {
+    fprintf(stderr, "[DEBUG] calling xmpp_ctx_free(%p)\n", ctx->strophe_ctx);
     xmpp_ctx_free((strophe_ctx_t*)ctx->strophe_ctx);
     ctx->strophe_ctx = NULL;
   }
+  fprintf(stderr, "[DEBUG] xmpp_session_cleanup done\n");
 }
 
 void xmpp_session_reset(xmpp_session_t* ctx) {
