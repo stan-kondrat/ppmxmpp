@@ -1062,6 +1062,7 @@ int xmpp_feed(xmpp_session_t* ctx, const char* data, size_t len, xmpp_write_fn w
                       sizeof(ctx->stream_ns));
 
   /* Debug: log raw data being fed to parser (first 256 chars) */
+  fprintf(stderr, "[DEBUG] xmpp_feed: before stump_d, target=%p\n", (void*)stumpless_get_current_target());
   {
     char _feedbuf[257];
     size_t _feedlen = feed_len < 256 ? feed_len : 256;
@@ -1069,6 +1070,7 @@ int xmpp_feed(xmpp_session_t* ctx, const char* data, size_t len, xmpp_write_fn w
     _feedbuf[_feedlen] = '\0';
     stump_d("xmpp_feed: feeding %zu bytes to parser: '%s'", feed_len, _feedbuf);
   }
+  fprintf(stderr, "[DEBUG] xmpp_feed: after stump_d, before parser_feed\n");
   /* libstrophe's parser_feed takes char* but doesn't modify the data. */
   int rc = parser_feed((parser_t*)ctx->parser, (char*)feed_data, (int)feed_len);
   if (rc == 0) {
