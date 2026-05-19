@@ -993,9 +993,12 @@ void xmpp_session_cleanup(xmpp_session_t* ctx) {
 }
 
 void xmpp_session_reset(xmpp_session_t* ctx) {
+  fprintf(stderr, "[DEBUG] xmpp_session_reset: ctx=%p sizeof=%zu\n", (void*)ctx, sizeof(*ctx));
   /* Free any existing parser/strophe_ctx before zeroing the struct. */
   xmpp_session_cleanup(ctx);
+  fprintf(stderr, "[DEBUG] xmpp_session_reset: after cleanup, starting memset\n");
   memset(ctx, 0, sizeof(*ctx));
+  fprintf(stderr, "[DEBUG] xmpp_session_reset: after memset\n");
   ctx->csi_state = XMPP_CSI_ACTIVE;
   ctx->state = XMPP_STATE_CONNECTED_TCP;
 
@@ -1010,10 +1013,13 @@ void xmpp_session_reset(xmpp_session_t* ctx) {
     (void)snprintf(ctx->stream_id, sizeof(ctx->stream_id), "%02x%02x%02x%02x%02x%02x%02x%02x",
                    rnd[0], rnd[1], rnd[2], rnd[3], rnd[4], rnd[5], rnd[6], rnd[7]);
   }
+  fprintf(stderr, "[DEBUG] xmpp_session_reset: after stream_id\n");
 
   strophe_ctx_t* sc = xmpp_ctx_new(NULL, NULL);
+  fprintf(stderr, "[DEBUG] xmpp_session_reset: xmpp_ctx_new=%p\n", (void*)sc);
   ctx->strophe_ctx = sc;
   ctx->parser = parser_new(sc, &on_stream_start, &on_stream_end, &on_stanza, ctx);
+  fprintf(stderr, "[DEBUG] xmpp_session_reset: done parser=%p\n", ctx->parser);
 }
 
 /* ------------------------------------------------------------------ */
