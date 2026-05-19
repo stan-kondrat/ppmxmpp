@@ -977,28 +977,20 @@ static void reset_parser(xmpp_session_t* ctx) {
 }
 
 void xmpp_session_cleanup(xmpp_session_t* ctx) {
-  fprintf(stderr, "[DEBUG] xmpp_session_cleanup: parser=%p strophe_ctx=%p\n",
-          ctx->parser, ctx->strophe_ctx);
   if (ctx->parser != NULL) {
-    fprintf(stderr, "[DEBUG] calling parser_free(%p)\n", ctx->parser);
     parser_free((parser_t*)ctx->parser);
     ctx->parser = NULL;
   }
   if (ctx->strophe_ctx != NULL) {
-    fprintf(stderr, "[DEBUG] calling xmpp_ctx_free(%p)\n", ctx->strophe_ctx);
     xmpp_ctx_free((strophe_ctx_t*)ctx->strophe_ctx);
     ctx->strophe_ctx = NULL;
   }
-  fprintf(stderr, "[DEBUG] xmpp_session_cleanup done\n");
 }
 
 void xmpp_session_reset(xmpp_session_t* ctx) {
-  fprintf(stderr, "[DEBUG] xmpp_session_reset: ctx=%p sizeof=%zu\n", (void*)ctx, sizeof(*ctx));
   /* Free any existing parser/strophe_ctx before zeroing the struct. */
   xmpp_session_cleanup(ctx);
-  fprintf(stderr, "[DEBUG] xmpp_session_reset: after cleanup, starting memset\n");
   memset(ctx, 0, sizeof(*ctx));
-  fprintf(stderr, "[DEBUG] xmpp_session_reset: after memset\n");
   ctx->csi_state = XMPP_CSI_ACTIVE;
   ctx->state = XMPP_STATE_CONNECTED_TCP;
 
@@ -1013,13 +1005,10 @@ void xmpp_session_reset(xmpp_session_t* ctx) {
     (void)snprintf(ctx->stream_id, sizeof(ctx->stream_id), "%02x%02x%02x%02x%02x%02x%02x%02x",
                    rnd[0], rnd[1], rnd[2], rnd[3], rnd[4], rnd[5], rnd[6], rnd[7]);
   }
-  fprintf(stderr, "[DEBUG] xmpp_session_reset: after stream_id\n");
 
   strophe_ctx_t* sc = xmpp_ctx_new(NULL, NULL);
-  fprintf(stderr, "[DEBUG] xmpp_session_reset: xmpp_ctx_new=%p\n", (void*)sc);
   ctx->strophe_ctx = sc;
   ctx->parser = parser_new(sc, &on_stream_start, &on_stream_end, &on_stanza, ctx);
-  fprintf(stderr, "[DEBUG] xmpp_session_reset: done parser=%p\n", ctx->parser);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1061,16 +1050,6 @@ int xmpp_feed(xmpp_session_t* ctx, const char* data, size_t len, xmpp_write_fn w
   extract_namespaces(data, len, ctx->client_ns, sizeof(ctx->client_ns), ctx->stream_ns,
                       sizeof(ctx->stream_ns));
 
-  /* Debug: log raw data being fed to parser (first 256 chars) */
-  fprintf(stderr, "[DEBUG] xmpp_feed: before stump_d, target=%p\n", (void*)stumpless_get_current_target());
-  {
-    char _feedbuf[257];
-    size_t _feedlen = feed_len < 256 ? feed_len : 256;
-    memcpy(_feedbuf, feed_data, _feedlen);
-    _feedbuf[_feedlen] = '\0';
-    stump_d("xmpp_feed: feeding %zu bytes to parser: '%s'", feed_len, _feedbuf);
-  }
-  fprintf(stderr, "[DEBUG] xmpp_feed: after stump_d, before parser_feed\n");
   /* libstrophe's parser_feed takes char* but doesn't modify the data. */
   int rc = parser_feed((parser_t*)ctx->parser, (char*)feed_data, (int)feed_len);
   if (rc == 0) {
