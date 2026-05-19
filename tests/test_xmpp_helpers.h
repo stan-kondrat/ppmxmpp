@@ -10,6 +10,10 @@ extern size_t g_write_len;
 /* Mock write function that appends to g_write_buf. */
 int mock_write(void* ud, const char* data, size_t len);
 
+/* cmocka group setup/teardown: initialize and silence the logger once per binary. */
+int log_group_setup(void** state);
+int log_group_teardown(void** state);
+
 /* Create a test database with a user. Returns 0 on success. */
 int setup_test_db(const char** db_path_out);
 

@@ -298,5 +298,5 @@ int main(void) {
       cmocka_unit_test(test_roster_get_with_mismatch_ver),
       cmocka_unit_test(test_roster_set_push_has_ver_attr),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

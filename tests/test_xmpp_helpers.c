@@ -23,6 +23,19 @@
 char g_write_buf[65536];
 size_t g_write_len = 0;
 
+int log_group_setup(void** state) {
+  (void)state;
+  log_init();
+  log_silence();
+  return 0;
+}
+
+int log_group_teardown(void** state) {
+  (void)state;
+  log_free();
+  return 0;
+}
+
 int mock_write(void* ud, const char* data, size_t len) {
   (void)ud;
   if (g_write_len + len > sizeof(g_write_buf)) {
@@ -55,8 +68,6 @@ int setup_test_db(const char** db_path_out) {
    * server_init's storage_db_open succeeds. */
   static int handlers_initialized = 0;
   if (!handlers_initialized) {
-    log_init();
-    log_silence();
     if (server_init() != 0) {
       fprintf(stderr, "setup_test_db: server_init failed\n");
       return -1;

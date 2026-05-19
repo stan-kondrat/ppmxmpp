@@ -373,5 +373,5 @@ int main(void) {
       cmocka_unit_test_setup_teardown(test_message_reply_b_to_a, message_test_setup,
                                       message_test_teardown),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

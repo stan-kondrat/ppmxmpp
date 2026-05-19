@@ -13,6 +13,7 @@
 
 #include <uv.h>
 
+#include "test_xmpp_helpers.h"
 #include "config.h"
 #include "server.h"
 
@@ -130,5 +131,5 @@ int main(void) {
       cmocka_unit_test(test_server_start_invalid_host),
       cmocka_unit_test(test_server_start_port_in_use),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

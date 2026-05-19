@@ -587,5 +587,5 @@ int main(void) {
       cmocka_unit_test_setup_teardown(test_carbon_forwarded_stanza_format, carbons_setup,
                                       carbons_teardown),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

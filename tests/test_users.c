@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "test_xmpp_helpers.h"
 #include "config.h"
 #include "storage/db.h"
 #include "storage/db_users.h"
@@ -433,5 +434,5 @@ int main(void) {
                                       users_test_teardown),
   };
 
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

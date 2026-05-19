@@ -398,5 +398,5 @@ int main(void) {
     cmocka_unit_test(test_r_before_enable_ignored),
     cmocka_unit_test(test_sm_feature_in_stream_features),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

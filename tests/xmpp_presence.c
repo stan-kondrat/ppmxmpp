@@ -749,5 +749,5 @@ int main(void) {
       cmocka_unit_test_setup_teardown(test_unsubscribe_removes_to_direction, presence_test_setup, presence_test_teardown),
       cmocka_unit_test_setup_teardown(test_unsubscribed_clears_ask, presence_test_setup, presence_test_teardown),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

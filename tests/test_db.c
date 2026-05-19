@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "test_xmpp_helpers.h"
 #include "config.h"
 #include "storage/db.h"
 
@@ -756,5 +757,5 @@ static const struct CMUnitTest test_db_tests[] = {
 };
 
 int main(void) {
-  return cmocka_run_group_tests(test_db_tests, NULL, NULL);
+  return cmocka_run_group_tests(test_db_tests, log_group_setup, log_group_teardown);
 }

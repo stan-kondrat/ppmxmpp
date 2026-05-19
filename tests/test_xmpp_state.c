@@ -1132,5 +1132,5 @@ int main(void) {
       cmocka_unit_test(test_bind_forbidden_char_in_resource),
       cmocka_unit_test(test_bind_no_id_attribute),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

@@ -322,5 +322,5 @@ int main(void) {
       cmocka_unit_test(test_disco_items_unknown_entity_returns_not_found),
       cmocka_unit_test(test_disco_items_unknown_node_returns_not_found),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

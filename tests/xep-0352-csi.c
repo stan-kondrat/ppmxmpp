@@ -185,5 +185,5 @@ int main(void) {
       cmocka_unit_test(test_csi_stream_feature_advertised),
       cmocka_unit_test(test_csi_init_returns_zero),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

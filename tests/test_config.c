@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "test_xmpp_helpers.h"
 #include "config.h"
 
 /* ---------------------------------------------------------------------------
@@ -253,5 +254,5 @@ static const struct CMUnitTest test_config_tests[] = {
 };
 
 int main(void) {
-  return cmocka_run_group_tests(test_config_tests, NULL, NULL);
+  return cmocka_run_group_tests(test_config_tests, log_group_setup, log_group_teardown);
 }

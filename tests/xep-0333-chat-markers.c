@@ -539,5 +539,5 @@ int main(void) {
                                       markers_setup, markers_teardown),
       cmocka_unit_test(test_null_stanza_returns_null),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }

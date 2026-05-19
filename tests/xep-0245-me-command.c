@@ -174,5 +174,5 @@ int main(void) {
       cmocka_unit_test(test_me_message_body_unchanged),
       cmocka_unit_test(test_regular_message_body_unchanged),
   };
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  return cmocka_run_group_tests(tests, log_group_setup, log_group_teardown);
 }
