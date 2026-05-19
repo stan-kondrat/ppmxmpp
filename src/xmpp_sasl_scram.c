@@ -388,6 +388,8 @@ int handle_scram_sha256(xmpp_session_t* ctx, int step, const char* input, size_t
   (void)response_cap;
   (void)response_out;
 
+  psa_crypto_init();  /* idempotent; required before any PSA hash/HMAC calls */
+
   scram_state_t* scram = &ctx->scram;
   char reply[4096];
 
